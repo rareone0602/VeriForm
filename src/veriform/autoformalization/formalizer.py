@@ -165,7 +165,7 @@ class OpenAIFormalizer(Autoformalization):
             )
 
             # ensure the chosen model is among the possible models in local VLLM server
-            assert self.model in self.client.models.list(), "The chosen model is not available on your local VLLM server!!!"
+            assert self.model in [model.id for model in self.client.models.list()], "The chosen model is not available on your local VLLM server!!!"
 
         else:
             self.client = OpenAI(api_key=api_key)
