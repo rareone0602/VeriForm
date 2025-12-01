@@ -56,7 +56,7 @@ class ProverTemplate(PromptTemplate):
     def format(self, input_text: str, **kwargs) -> str:
         #lean_code = re.findall("```lean(.+)```", input_text, flags=re.DOTALL)[-1]
         #lean_code=input_text.strip()
-        return self.template.format(input_text=lean_code)
+        return self.template.format(input_text=input_text)
 
 
 # Formalin step-wise template
