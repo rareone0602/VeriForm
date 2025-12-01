@@ -67,6 +67,7 @@ class GSM8KLoader(DatasetLoader):
         steps = []
         for step_idx, line in enumerate(lines):
             # Skip the final answer line
+            line = re.sub("(<<.+>>)?", "", line, flags=re.DOTALL)
             if line.startswith("####"):
                 continue
 
