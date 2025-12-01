@@ -69,7 +69,7 @@ class Autoformalization(ABC):
                 lean_code = self._extract_lean_code(response)
 
                 if lean_code:
-                    return lean_code
+                    return lean_code, last_error, attempt, response
                 else:
                     last_error = "Could not extract Lean code from response"
 
