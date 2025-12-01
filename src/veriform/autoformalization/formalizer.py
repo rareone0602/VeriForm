@@ -40,7 +40,7 @@ class Autoformalization(ABC):
         model: str,
         temperature: float = 0.0,
         max_retries: int = 3,
-        template: str = "safe"
+        template: str = "safe",
         **kwargs
     ):
         # TODO: Allow multiple models for multistep formalization (e.g. AF + Prover)

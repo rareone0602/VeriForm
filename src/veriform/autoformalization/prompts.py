@@ -4,7 +4,7 @@ Prompt templates for autoformalization.
 
 from typing import List
 from veriform.data_collection import ReasoningStep
-from templates import NLVTemplate, FormalTemplate, SafeFormalTemplate, ProverTemplate, STEP_NLV_TEMPLATE, STEPS_SAFE_TEMPLATE, PROVER_TEMPLATE, IN_CONTEXT_LEAN_TEMPLATE
+from .templates import NLVTemplate, FormalTemplate, SafeFormalTemplate, ProverTemplate, STEP_NLV_TEMPLATE, STEPS_SAFE_TEMPLATE, PROVER_TEMPLATE, IN_CONTEXT_LEAN_TEMPLATE
 
 
 AUTOFORMALIZATION_SYSTEM_PROMPT = """You are an expert in formal mathematics and the Lean theorem prover. Your task is to translate natural language mathematical reasoning steps into Lean 4 code.
