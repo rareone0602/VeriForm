@@ -78,8 +78,8 @@ analyze_faithfulness(results, output_dir="./results")
 ```bibtex
 @misc{veriform2024,
   title={Veriform: Benchmarking Faithfulness in Autoformalization},
-  author={Rob and collaborators},
-  year={2024}
+  author={Rob Cornish, Iacopo Ghinassi},
+  year={2025}
 }
 ```
 
