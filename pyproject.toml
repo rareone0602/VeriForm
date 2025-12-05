@@ -8,11 +8,15 @@ version = "0.1.0"
 description = "Benchmarking framework for measuring faithfulness in autoformalization systems"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
-authors = [
-    {name = "Rob and collaborators"}
+license = { text = "MIT" }
+authors = [{ name = "Rob and collaborators" }]
+keywords = [
+    "autoformalization",
+    "formal-verification",
+    "lean",
+    "theorem-proving",
+    "benchmarking",
 ]
-keywords = ["autoformalization", "formal-verification", "lean", "theorem-proving", "benchmarking"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -37,6 +41,8 @@ dependencies = [
     "tqdm>=4.65.0",
     "pyyaml>=6.0",
     "jsonlines>=3.1.0",
+    "torch",
+    "torchvision",
 ]
 
 [project.optional-dependencies]
