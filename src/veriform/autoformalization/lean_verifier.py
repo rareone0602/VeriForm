@@ -269,6 +269,15 @@ class LeanVerifier:
                         has_sorry=False,
                         has_admit=False
                     )
+            
+            return VerificationResult(
+                success=False,
+                error_message="; ".join(verification_result.errors),
+                stdout="",
+                stderr="; ".join(verification_result.errors),
+                has_sorry="sorry" in lean_code,
+                has_admit="admit" in lean_code
+            )
 
     def verify_file(self, file_path: str) -> VerificationResult:
         """
