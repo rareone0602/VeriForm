@@ -347,3 +347,26 @@ PROVER_TEMPLATE = """Complete the following Lean 4 code to prove that the given 
 
 -- complete your proof here below: 
 """
+
+LEAN_WRAPPER_TEMPLATE = """
+import Mathlib
+import Aesop
+
+set_option maxHeartbeats 0
+
+open BigOperators Real Nat Topology Rat
+
+-- {statement}
+{lean_code}
+"""
+
+PROVER_TEMPLATE_DEEPSEEK = """
+Complete the following Lean 4 code:
+    
+```lean4
+{lean_code_with_sorry}
+```
+
+Before producing the Lean 4 code to formally prove the given theorem, provide a detailed proof plan outlining the main proof steps and strategies.
+The plan should highlight key ideas, intermediate lemmas, and proof structures that will guide the construction of the final formal proof.
+""".strip()

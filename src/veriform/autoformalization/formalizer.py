@@ -296,7 +296,7 @@ class MockFormalizer(Autoformalization):
         """Return a mock Lean code response."""
         return """```lean
 theorem mock_theorem : 1 + 1 = 2 := by
-  rfl
+  sorry
 ```"""
 
 
