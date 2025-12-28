@@ -5,7 +5,7 @@ from src.veriform.data_collection.reasoning_step import ReasoningChain
 
 from veriform.autoformalization_v2.dag import StandardDAGModel
 from veriform.autoformalization_v2.perturber import StandardPerturber
-from veriform.autoformalization_v2.formalizer import StepfunFormalizer
+from veriform.autoformalization_v2.formalizer.stepfun import StepfunFormalizer
 from veriform.autoformalization_v2.prover import DeepSeekProver
 from veriform.autoformalization_v2.pipeline import StandardPipeline
 
@@ -26,13 +26,14 @@ class TestPipeline(unittest.TestCase):
 
         pipeline = StandardPipeline(perturber, formalizer, prover)
 
-        lean_program = pipeline(chains[0])
+        dag = pipeline(chains[0])
+        lean_program = dag.lean()
         print(lean_program)
 
         del pipeline
 
     def test_perturbed_pipeline(self):
-        gsm8k = GSM8KLoader(split="test", num_samples=1)
+        gsm8k = GSM8KLoader(split="test", num_samples=100)
         chains = gsm8k.load()
         perturber = StandardPerturber(
             p=1.0, 
@@ -44,7 +45,8 @@ class TestPipeline(unittest.TestCase):
 
         pipeline = StandardPipeline(perturber, formalizer, prover)
 
-        lean_program = pipeline(chains[0])
+        dag = pipeline(chains[0])
+        lean_program = dag.lean()
         print(lean_program)
 
         del pipeline

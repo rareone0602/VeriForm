@@ -21,24 +21,28 @@ class StandardPerturber:
         self.operator_swap = operator_swap
         self.value_change = value_change
         self.logical_negation = logical_negation
+        self.number_pattern = re.compile(r'(-?\d+\.?\d*)')
     
     def operator_swap_str(self, content: str) -> Tuple[str, bool]:
         """Swap mathematical or logical operators in the content string."""
         # Enhanced operator map with correct inverses and comparison operators
         operators = {
-            '+': '-', '-': '+',
-            '*': '/', '/': '*',
-            '>': '<=', '<': '>=',
-            '>=': '<', '<=': '>',
-            '==': '!=', '!=': '=='
+            '+': ['-', '*', '/'],
+            '*': ['+', '-', '/'],
+            '-': ['+', '*', '/'],
+            '/': ['+', '-', '*'],
+            ' = ': [' < ', ' > '], # Space to avoid matching '<=', '>=', or other operators in other contexts
         }
-        swapping = list(operators.keys())
-        random.shuffle(swapping) 
+        swapping = ['+', '-', '*', '/', ' = ']
         for op in swapping:
-            all_occurrences = [m.start() for m in re.finditer(re.escape(op), content)]
-            if len(all_occurrences) > 0:
-                idx = random.choice(all_occurrences)
-                content = content[:idx] + operators[op] + content[idx + len(op):]
+            all_matches = list(re.finditer(re.escape(op), content))
+            if all_matches:
+                # choose the last occurrence to swap
+                match = all_matches[-1]
+                replacements = operators[op]
+                new_op = random.choice(replacements)
+                start, end = match.start(), match.end()
+                content = content[:start] + new_op + content[end:]
                 return content, True
         return content, False
     
@@ -49,34 +53,30 @@ class StandardPerturber:
         True for successful change, False otherwise.
         """
         # Try to find numbers on the RHS first
-        if '=' in content:
-            lhs, rhs = content.rsplit('=', 1)
-            rhs_numbers = [m for m in re.finditer(r'\d+', rhs)]
-            if rhs_numbers:
-                match = random.choice(rhs_numbers)
-                original_value = int(match.group())
-                change = random.choice([-1, 1]) * random.randint(1, max(1, int(original_value * 0.1)) + 5)
-                new_value = max(0, original_value + change)
-                # Reconstruct content: lhs + '=' + rhs_before + new_val + rhs_after
-                new_rhs = rhs[:match.start()] + str(new_value) + rhs[match.end():]
-                return lhs + '=' + new_rhs, True
-
-        # Fallback to original logic if no RHS numbers found
-        numbers = [m for m in re.finditer(r'\d+', content)]
-        if not numbers:
-            return content, False
+        def modify_number(original_value):
+            change = random.choice([-1, 1]) * random.randint(1, max(1, int(original_value * 0.1)) + 5)
+            new_value = max(0, original_value + change) # Ensure non-negative for simplicity, or allow negative
+            return new_value
         
-        # Pick a random number to change
-        match = random.choice(numbers)
-        original_value = int(match.group())
+        # Modify last two numbers in the string. Modify one if only one exists.
+        numbers = list(self.number_pattern.finditer(content))
         
-        # Generate a new value (e.g., +/- 1 to 10 or +/- 10%)
-        change = random.choice([-1, 1]) * random.randint(1, max(1, int(original_value * 0.1)) + 5)
-        new_value = max(0, original_value + change) # Ensure non-negative for simplicity, or allow negative
-        
-        # Replace only that specific occurrence
-        content = content[:match.start()] + str(new_value) + content[match.end():]
-        return content, True
+        def is_int(s):
+            try:
+                int(s)
+                return True
+            except ValueError:
+                return False
+            
+        if len(numbers) > 0:
+            for match in numbers[-2:]:
+                num = match.group(0)
+                original_value = int(num) if is_int(num) else float(num)
+                new_value = modify_number(original_value)
+                start, end = match.start(), match.end()
+                content = content[:start] + str(new_value) + content[end:]
+            return content, True
+        return content, False
 
 
     def logical_negation_str(self, content: str) -> Tuple[str, bool]:
@@ -96,19 +96,19 @@ class StandardPerturber:
                 # If no verbs found, prepend 'not' to the content
                 return content, False
 
-    def perturb_str(self, content: str) -> str:
+    def perturb_str(self, content: str) -> Tuple[str, bool]:
         """Apply perturbations to a string based on the initialized settings."""
         perturbed_content = content
         applying_fn = []
 
-        if self.operator_swap:
-            applying_fn.append(self.operator_swap_str)
         if self.value_change:
             applying_fn.append(self.value_change_str)
+        if self.operator_swap:
+            applying_fn.append(self.operator_swap_str)
         if self.logical_negation:
             applying_fn.append(self.logical_negation_str)
 
-        random.shuffle(applying_fn)
+        # random.shuffle(applying_fn)
 
         changed = False
 
@@ -120,17 +120,23 @@ class StandardPerturber:
         if not changed:
             print(f"Warning: No perturbation was applied to the content {content}")
 
-        return perturbed_content
+        return perturbed_content, changed
 
     def perturb(self, dag_input: DAGModel, step_id: int) -> DAGModel:
         """Concrete implementation of perturbation."""
         # Implementation details would go here
         if step_id is None:
             step_id = random.randint(0, len(dag_input) - 1)        
+        node = dag_input[step_id]
         if random.random() < self.p:
-            node = dag_input[step_id]
-            node.content = self.perturb_str(node.content)
-            dag_input[step_id] = node
+            node.perturbed_content, node.is_perturbed = self.perturb_str(node.content)
+            # With little probability, it will return a different content
+            # We currently negelect that case as it is rare
+            # So the actual p is slightly lower than specified
+        else:
+            node.perturbed_content, node.is_perturbed = node.content, False
+        dag_input[step_id] = node
+        
         return dag_input
 
 

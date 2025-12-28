@@ -12,15 +12,16 @@ class TestPerturbedModel(unittest.TestCase):
         dag = StandardDAGModel(chains[0])
         perturber = StandardPerturber(
             p=1.0, 
-            operator_swap=False, 
-            value_change=True, 
+            operator_swap=True, 
+            value_change=False, 
             logical_negation=False)
         
         for node in dag.nodes:
             print(f"Original node content: {node.content}")
-        perturbed_dag = perturber.perturb(dag, step_id=2)
+        for i in range(len(dag)):
+            perturbed_dag = perturber.perturb(dag, step_id=i)
         for node in perturbed_dag.nodes:
-            print(f"Perturbed node content: {node.content}")
+            print(f"Perturbed node content: {node.perturbed_content}")
 
 # Run the tests
 # python -m unittest tests.test_perturbed_model

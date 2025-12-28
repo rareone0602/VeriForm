@@ -7,6 +7,7 @@ from typing import List, Optional, Dict, Any
 from abc import ABC, abstractmethod
 import random
 
+import json
 from datasets import load_dataset
 
 from .reasoning_step import ReasoningStep, ReasoningChain, StepType
@@ -46,7 +47,7 @@ class GSM8KLoader(DatasetLoader):
         chains = []
         for idx, example in enumerate(dataset):
             chain = ReasoningChain(
-                chain_id=idx,
+                chain_id=str(idx),
                 problem_statement=example["question"],
                 steps=self.parse_reasoning_steps(example),
                 final_answer=self._extract_final_answer(example["answer"]),
@@ -116,7 +117,7 @@ class MATHLoader(DatasetLoader):
         chains = []
         for idx, example in enumerate(dataset):
             chain = ReasoningChain(
-                chain_id=idx,
+                chain_id=str(idx),
                 problem_statement=example["problem"],
                 steps=self.parse_reasoning_steps(example),
                 final_answer=example["solution"],
@@ -164,6 +165,52 @@ class MATHLoader(DatasetLoader):
             return StepType.SIMPLIFICATION
         else:
             return StepType.OTHER
+
+class ProcessBenchLoader(DatasetLoader):
+    def __init__(self, file_path: str, **kwargs):
+        super().__init__(**kwargs)
+        self.file_path = file_path
+
+    
+    def load(self) -> List[ReasoningChain]:
+        with open(self.file_path, 'r') as f:
+            data = json.load(f)
+        if self.num_samples:
+            data = random.sample(data, min(self.num_samples, len(data)))
+
+        chains = []
+        for idx, example in enumerate(data):
+            chain = ReasoningChain(
+                chain_id=example["id"], # e.g. 'gsm8k-200'
+                problem_statement=example["problem"],
+                steps=self.parse_reasoning_steps(example['dags']),
+                final_answer=example["dags"]["final_answer"],
+                source_dataset=example['split'],
+                metadata={
+                    "generator": example.get("generator", ""),
+                    "notes": example.get("dags", {}).get("metadata", {}).get("notes", ""),
+                    "difficulty": example.get("dags", {}).get("metadata", {}).get("difficulty", "unknown"),
+                    "final_answer_correct": example.get("final_answer_correct", None),
+                }
+            )
+            chains.append(chain)
+
+        return chains  
+
+    def parse_reasoning_steps(self, example: Dict[str, Any]) -> List[ReasoningStep]:
+        """Parse ProcessBench steps into reasoning steps."""
+        steps_data = example['nodes']
+        steps = []
+        for step_idx, step_content in enumerate(steps_data):
+            assert step_content['node_id'] == f'step_{step_idx + 1}', "Step IDs are not in expected order."
+            step = ReasoningStep(
+                step_id=step_idx,
+                content=step_content['content'],
+                step_type=StepType.OTHER if step_content['statement_type'] == 'declarative' else StepType.CALCULATION,
+                previous_steps=[i for i in range(step_idx)],
+            )
+            steps.append(step)
+        return steps
 
 
 class CustomLoader(DatasetLoader):

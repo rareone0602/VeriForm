@@ -59,7 +59,7 @@ class ReasoningStep:
 class ReasoningChain:
     """A complete chain of reasoning steps."""
 
-    chain_id: int
+    chain_id: str
     problem_statement: str
     steps: List[ReasoningStep] = field(default_factory=list)
     final_answer: Optional[str] = None

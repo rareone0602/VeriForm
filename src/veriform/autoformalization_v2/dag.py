@@ -1,16 +1,58 @@
 from abc import ABC, abstractmethod
 from typing import List, Any, Optional, Protocol, runtime_checkable
 from dataclasses import dataclass, field
-from veriform.data_collection.reasoning_step import ReasoningChain
+from veriform.data_collection.reasoning_step import ReasoningChain, StepType
+from enum import Enum
+
+class Flagging(Enum):
+    """
+    AF-Fail, TC-Fail, Unknown, Refuted, Proved, Declarative
+    """
+    AF_FAIL = "AF-Fail"
+    TC_FAIL = "TC-Fail"
+    REFUTED = "Refuted"
+    PROVED = "Proved"
+    DECLARATIVE = "Declarative"
+    UNKNOWN = "Unknown"
 
 
 @dataclass
 class DAGNode:
     node_id: int
     content: str
+    flag: Flagging = Flagging.UNKNOWN
+    is_perturbed: bool = False
+    perturbed_content: Optional[str] = None
     formalized_content: Optional[str] = None
     parents: List["DAGNode"] = field(default_factory=list)
     children: List["DAGNode"] = field(default_factory=list)
+
+    def get_ancestors(self, visited=None) -> List["DAGNode"]:
+        """Recursively get all ancestor nodes."""
+        if visited is None:
+            visited = set()
+        ancestors = []
+        for parent in self.parents:
+            if parent.node_id not in visited:
+                visited.add(parent.node_id)
+                ancestors.append(parent)
+                # Pass the existing set down to the recursive call
+                ancestors.extend(parent.get_ancestors(visited))
+        return ancestors
+
+    def contextualized(self) -> str:
+        """Return the content with context from parent nodes."""
+        if len(self.parents) == 0:
+            return self.content
+        context = "<context>\n"
+        ancestors = sorted(
+            self.get_ancestors(),
+            key=lambda x: x.node_id
+        )
+        for anc in ancestors:
+            context += f"{anc.content}\n"
+        context += "</context>\n"
+        return context.strip() + "\nBased on the context, formalize the following statement: " + (self.perturbed_content if self.perturbed_content is not None else self.content)
 
 class DAGModel(ABC):
     @abstractmethod
@@ -59,8 +101,10 @@ open BigOperators Real Nat Topology Rat
             node = DAGNode(
                 node_id=step.step_id,
                 content=step.content,
-                parents=[nodes[p] for p in step.previous_steps]
+                parents=[nodes[p] for p in step.previous_steps],
             )
+            if step.step_type == StepType.OTHER:
+                node.flag = Flagging.DECLARATIVE
             nodes.append(node)
         
         for node in nodes:
@@ -87,7 +131,8 @@ open BigOperators Real Nat Topology Rat
         for node in self.nodes:
             if node.formalized_content is None:
                 continue
-            ret += f'-- Step {node.node_id}: {node.content}\n'
+            ret += f'/- Step {node.node_id}: {node.content} -/\n'
+            ret += f'/- Perturbed Step {node.node_id}: {node.perturbed_content if node.perturbed_content is not None else node.content} -/\n'
             ret += node.formalized_content + "\n\n"
         return ret.strip()
 
