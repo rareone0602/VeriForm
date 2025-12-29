@@ -1,6 +1,3 @@
-from .stepfun import StepfunFormalizer
-from .kimina import KiminaFormalizer
-from .goedel import GoedelFormalizer
-from .herald import HeraldFormalizer
+from .formalizers import StepfunFormalizer, KiminaFormalizer, GoedelFormalizer, HeraldFormalizer
 
 from typing import Protocol, Optional

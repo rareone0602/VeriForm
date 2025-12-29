@@ -2,18 +2,17 @@ import unittest
 
 
 from veriform.autoformalization_v2.prover import DeepSeekProver
-from veriform.autoformalization_v2.formalizer.stepfun import StepfunFormalizer
 import pickle
 
 class TestProver(unittest.TestCase):
-
+    
     def test_prove(self):
         prover = DeepSeekProver(batch_size=2)
 
         with open("tests/pkls/formalized_dag.pkl", "rb") as f:
             formalized_dag = pickle.load(f)
 
-        proven_dag = prover.prove(formalized_dag, formalizer_header=StepfunFormalizer.HEADER)
+        proven_dag = prover.prove(formalized_dag)
 
         for node in proven_dag.nodes:
             print(f"Original node content: {node.content}")
@@ -31,9 +30,10 @@ class TestProver(unittest.TestCase):
         with open("tests/pkls/formalized_perturbed_processbench_dag.pkl", "rb") as f:
             formalized_dag = pickle.load(f)
 
-        proven_dag = prover.prove(formalized_dag, formalizer_header=StepfunFormalizer.HEADER)
+        proven_dag = prover.prove(formalized_dag)
 
         for node in proven_dag.nodes:
+            print(f"Flag: {node.flag}")
             print(f"Original node content: {node.content}")
             print(f"Perturbed node content: {node.perturbed_content}")
             print(f"Formalized node content: \n```\n{node.formalized_content}```")

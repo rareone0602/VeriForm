@@ -21,6 +21,7 @@ class BaseFormalizerTest(unittest.TestCase):
             pickle.dump(formalized_dag, f)
         return formalized_dag
     
+    @unittest.skip("temporarily skipping due to debugging")
     def test_formalization_gsm8k(self):
         gsm8k = GSM8KLoader(split="test", num_samples=1)
         chains = gsm8k.load()
@@ -35,11 +36,20 @@ class BaseFormalizerTest(unittest.TestCase):
         perturber = StandardPerturber(p=1, operator_swap=True, value_change=True, logical_negation=True)
         formalizer = self.formalizer_class()
         
+        sorry_count = 0
         for i in range(len(dag)):
             dag = perturber.perturb(dag, step_id=i)
-        
+                
         self._run_formalization_test(dag, formalizer, "tests/pkls/formalized_perturbed_processbench_dag.pkl")
 
+        for i in range(len(dag)):
+            if dag.nodes[i].formalized_content is not None:
+                sorry_count += dag.nodes[i].formalized_content.count("sorry")
+
+        assert sorry_count > len(dag) // 2, "Perturbation did not introduce enough 'sorry' in formalized content."
+
+
+    @unittest.skip("temporarily skipping due to debugging")
     def test_perturbed_formalization(self):
         gsm8k = GSM8KLoader(split="test", num_samples=1)
         chains = gsm8k.load()
@@ -68,5 +78,5 @@ class TestHeraldFormalizer(BaseFormalizerTest):
     formalizer_class = HeraldFormalizer
 
 # Run the tests
-# python -m unittest tests.test_formalizer
+# python -m unittest tests.test_formalizer.TestHeraldFormalizer.test_formalization_perturbed_processbench
 

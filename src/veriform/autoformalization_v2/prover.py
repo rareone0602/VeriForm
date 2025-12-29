@@ -1,70 +1,17 @@
-
-
-
+import re
 from typing import List, Protocol, Optional, Tuple
+from dataclasses import dataclass, field
+
+import asyncio
+import backoff
+from abc import abstractmethod
+from transformers import AutoTokenizer
+import openai
+from openai import AsyncOpenAI  # Changed from vllm
 
 from .deepseek.prover.lean.verifier import Lean4ServerScheduler
+from .theorem_extractor import TheoremExtractor
 from .dag import DAGModel, Flagging
-from abc import abstractmethod
-from vllm import LLM, SamplingParams
-from transformers import AutoTokenizer
-
-import re
-
-
-
-class TheoremExtractor:
-    def __init__(self):
-        # EXPLANATION OF REGEX:
-        # theorem\s+(\w+)   : Matches 'theorem' and the name.
-        # \s+               : Must be some space after name.
-        # (?P<sig>          : Start capturing the 'signature' (params + type).
-        #   (?:(?!:=).)* : THE KEY FIX. "Match any char that does NOT start ':=', repeatedly."
-        # )                 : End capture.
-        # \s*:=             : Stop exactly at the definition operator.
-        self.theorem_pattern = re.compile(r"theorem\s+(\w+)\s+(?P<sig>(?:(?!:=).)*)\s*:=", re.DOTALL)
-
-    def _split_signature(self, signature: str) -> Tuple[Optional[str], str]:
-        """
-        Splits the signature (e.g., "(n : Nat) : n = n") into params and body.
-        It looks for the first colon that is NOT nested inside (), {}, or [].
-        """
-        balance = 0
-        # Iterate through the string to find the 'top-level' colon
-        for i, char in enumerate(signature):
-            if char in "([{":
-                balance += 1
-            elif char in ")]}":
-                balance -= 1
-            elif char == ":" and balance == 0:
-                # We found the separator!
-                params = signature[:i].strip()
-                body = signature[i+1:].strip()
-                # If params is empty strings, make it None for consistency
-                return (params if params else None, body)
-        
-        # Fallback: if no colon found (unlikely in valid Lean), assume entire sig is body
-        return None, signature.strip()
-
-    def get_last_theorem(self, code: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-        """
-        Extracts the LAST theorem occurrence reliably.
-        """
-        matches = list(self.theorem_pattern.finditer(code))
-        
-        if not matches:
-            return None, None, None
-
-        # Take the last match
-        last_match = matches[-1]
-        name = last_match.group(1)
-        raw_signature = last_match.group('sig')
-
-        # Use logic to split params and body safely
-        params, body = self._split_signature(raw_signature)
-        
-        return name, params, body
-
 
 class Prover(Protocol):
     @abstractmethod
@@ -97,38 +44,61 @@ Before producing the Lean 4 code to formally prove the given theorem, provide a 
 The plan should highlight key ideas, intermediate lemmas, and proof structures that will guide the construction of the final formal proof.
 """.strip()
 
+@dataclass
+class TheoremData:
+    flag: Flagging = Flagging.UNKNOWN
+
+    tc_request_id: Optional[int] = None
+
+    problem_nl_dir : Optional[str] = None
+    prompt_dir: Optional[str] = None
+    param_dir: Optional[str] = None
+    body_dir: Optional[str] = None
+    
+    problem_nl_neg: Optional[str] = None
+    prompt_neg: Optional[str] = None
+    param_neg: Optional[str] = None
+    body_neg: Optional[str] = None
+    
+    proof_candidates_dir: List[Tuple[str, str]] = field(default_factory=list)
+    proof_candidates_neg: List[Tuple[str, str]] = field(default_factory=list)
 
 
+"""
+Run this first
+CUDA_VISIBLE_DEVICES=0 vllm serve deepseek-ai/DeepSeek-Prover-V2-7B \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --dtype bfloat16 \
+    --gpu-memory-utilization 0.64 \
+    --max-model-len 16384
+"""
 class DeepSeekProver:
-    MODEL_DIR = "deepseek-ai/DeepSeek-Prover-V2-7B"
-    def __init__(self, batch_size: int = 1):
+    MODEL_NAME = "deepseek-ai/DeepSeek-Prover-V2-7B"
+    def __init__(self, base_url: str = "http://localhost:8000/v1", batch_size: int = 1):
         self.system_prompt = "You are an expert in mathematics and Lean 4."
-        self.tokenizer = AutoTokenizer.from_pretrained(self.MODEL_DIR)
-        self.model = LLM(
-            self.MODEL_DIR,
-            dtype="bfloat16", 
-            tensor_parallel_size=2,
-            gpu_memory_utilization=0.2,
-        )
+        
+        # We keep the tokenizer LOCALLY just for formatting the prompt correctly
+        self.tokenizer = AutoTokenizer.from_pretrained(self.MODEL_NAME)
+        
+        # Initialize the API Client
+        self.client = AsyncOpenAI(api_key="EMPTY", base_url=base_url)
+        
         self.lean_pattern = re.compile(r"```lean4(.*?)```", re.DOTALL | re.IGNORECASE)
         self.batch_size = batch_size
 
-        # 'theorem mathd_algebra_10 : abs ((120 : ℝ) / 100 * 30 - 130 / 100 * 20) = 10 := by ...' => 'theorem mathd_algebra_10 : abs ((120 : ℝ) / 100 * 30 - 130 / 100 * 20) = 10'
         self.theorem_pattern = re.compile(r"theorem\s+(\w+)(.*?):\s*(.*?)\s*:=", re.DOTALL)
-
-        self.sampling_params = SamplingParams(
-            temperature=0.7,
-            top_p=0.95,
-            top_k=50,
-            max_tokens=8192,
-            n=self.batch_size
-        )
-
-        self.scheduler = Lean4ServerScheduler(
-            max_concurrent_requests=16,
-        )
-
+        self.scheduler = Lean4ServerScheduler()
         self.theorem_extractor = TheoremExtractor()
+
+        # Generation config (moved from SamplingParams)
+        self.gen_kwargs = {
+            "temperature": 0.6,
+            "top_p": 0.95,
+            "max_tokens": 8192,
+            "n": self.batch_size, # Request 'n' completions per prompt
+            # "stop": ["\n\n"] # Add stop tokens if needed
+        }
     
     def __del__(self):
         if hasattr(self, 'scheduler'):
@@ -146,7 +116,6 @@ class DeepSeekProver:
 
     def initialize_dialog(self):
         self.dialog = []
-
 
     def get_tc_async(self, formalized_problem: str, header: str = HEADER) -> int:
         lean_code = header + "\n\n" + formalized_problem
@@ -193,138 +162,227 @@ class DeepSeekProver:
         return valid_candidates
         
         
-    
-
-        
-    def prove_single_async(self, problem_nl_dir: str, problem_fl_dir: str) -> Optional[tuple[List[Tuple[str, int]], List[Tuple[str, int]]]]:
+    def get_proof_prompts(self, problem_nl_dir: str, problem_fl_dir: str) -> TheoremData:
+        # This method also remains UNCHANGED.
+        # We still use self.tokenizer locally to format the chat template into a string.
         name_dir, param_dir, body_dir = self.theorem_extractor.get_last_theorem(problem_fl_dir)
         
         if name_dir is None or body_dir is None:
-            print(problem_fl_dir) # Debugging info
-            return None
+            return TheoremData(flag=Flagging.AF_FAIL)
         
+        user_prompt_dir = LEAN_WRAPPER_TEMPLATE.format(
+            lean_code=LEAN_TEMPLATE.format(lean_code=problem_fl_dir, statement=problem_nl_dir)
+        )
         problem_fl_neg = self.get_refute_theorem(problem_fl_dir)
         problem_nl_neg = "Negation of: " + problem_nl_dir
         name_neg, param_neg, body_neg = self.theorem_extractor.get_last_theorem(problem_fl_neg)
-        
-        
-        user_prompt_dir = LEAN_WRAPPER_TEMPLATE.format(
-            lean_code=LEAN_TEMPLATE.format(
-                lean_code=problem_fl_dir,
-                statement=problem_nl_dir
-            )
-        )
+
         user_prompt_neg = LEAN_WRAPPER_TEMPLATE.format(
-            lean_code=LEAN_TEMPLATE.format(
-                lean_code=problem_fl_neg,
-                statement=problem_nl_neg
-            )
+            lean_code=LEAN_TEMPLATE.format(lean_code=problem_fl_neg, statement=problem_nl_neg)
         )
         
         self.dialog.append({"role": "user", "content": user_prompt_dir})
         prompt_dir = self.tokenizer.apply_chat_template(self.dialog, tokenize=False, add_generation_prompt=True)
-        self.dialog.pop()  # Remove last user prompt
+        self.dialog.pop()
         self.dialog.append({"role": "user", "content": user_prompt_neg})
         prompt_neg = self.tokenizer.apply_chat_template(self.dialog, tokenize=False, add_generation_prompt=True)
 
-        response = self.model.generate(
-            [prompt_dir, prompt_neg], 
-            sampling_params=self.sampling_params)
-        # Append model response to dialog
-
-        proof_candidates_dir = self.filter_proof_candidates(
-            target_param=param_dir,
-            target_body=body_dir,
-            proof_candidates=[response[0].outputs[i].text for i in range(self.batch_size)],
-            comment=problem_nl_dir
-        )
-        proof_candidates_neg = self.filter_proof_candidates(
-            target_param=param_neg,
-            target_body=body_neg,
-            proof_candidates=[response[1].outputs[i].text for i in range(self.batch_size)],
-            comment=problem_nl_neg
+        return TheoremData(
+            problem_nl_dir=problem_nl_dir, prompt_dir=prompt_dir, param_dir=param_dir, body_dir=body_dir,
+            problem_nl_neg=problem_nl_neg, prompt_neg=prompt_neg, param_neg=param_neg, body_neg=body_neg
         )
 
-        request_ids = self.scheduler.submit_all_request(
-            [
-                dict(code=code, ast=False, tactics=False)
-                for _, code in proof_candidates_dir
-            ] + [
-                dict(code=code, ast=False, tactics=False)
-                for _, code in proof_candidates_neg
-            ]
+    @backoff.on_exception(
+        backoff.expo, 
+        (openai.RateLimitError, openai.APIConnectionError, openai.InternalServerError),
+        max_tries=5,
+        jitter=backoff.full_jitter
+    )
+    async def _safe_request(self, prompt: str):
+        """
+        Sends a single request with automatic retries for transient errors.
+        """
+        return await self.client.completions.create(
+            model=self.MODEL_NAME,
+            prompt=prompt,
+            **self.gen_kwargs
         )
-        requests_ids_dir, requests_ids_neg = (
-            request_ids[:len(proof_candidates_dir)],
-            request_ids[len(proof_candidates_dir):]
-        )
-        return (
-            list(zip([code for code, _ in proof_candidates_dir], requests_ids_dir)),
-            list(zip([code for code, _ in proof_candidates_neg], requests_ids_neg))
-        )
-        
-    def prove_single_result(self, 
-                            prove_requests: tuple[List[Tuple[str, int]], List[Tuple[str, int]]],
-                            formalized_problem: str) -> tuple[str, Flagging]:
-        prove_requests_dir, prove_requests_neg = prove_requests
-        mid = len(prove_requests_dir)
-        all_ids = [req_id for _, req_id in prove_requests_dir] + [req_id for _, req_id in prove_requests_neg]
-        all_results = self.scheduler.get_all_request_outputs(all_ids)
-        results_dir, results_neg = (
-            all_results[:mid],
-            all_results[mid:]
-        )
-        # Check direct proofs first
-        valid_proof = None
-        for (code, _), result in zip(prove_requests_dir, results_dir):
-            if result['complete']:
-                return code, Flagging.PROVED
-        
-        # Check negation proofs
-        for (code, _), result in zip(prove_requests_neg, results_neg):
-            if result['complete']:
-                return code, Flagging.REFUTED
-        
-        # If neither direct nor negation proofs succeeded
 
-        return formalized_problem, Flagging.UNKNOWN
+    async def _generate_batch_async(self, prompts: List[str]):
+        """Helper to send requests to the API in parallel with robustness."""
+        tasks = []
+        for prompt in prompts:
+            # We call the decorated helper function here
+            tasks.append(self._safe_request(prompt))
+        
+        # return_exceptions=True ensures that if one request permanently fails 
+        # (e.g. Context Length Error), it doesn't crash the whole batch immediately.
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Optional: Handle any remaining exceptions (like 400 Bad Request)
+        final_results = []
+        for res in results:
+            if isinstance(res, Exception):
+                print(f"Request failed permanently: {res}")
+                # You might want to return a dummy object or re-raise
+                # creating a dummy object to prevent downstream crashes:
+                class DummyChoice: text = ""
+                class DummyResponse: choices = [DummyChoice()] * self.batch_size
+                final_results.append(DummyResponse())
+            else:
+                final_results.append(res)
+                
+        return final_results
+
+    def get_proof_outputs(self, data: List[TheoremData]) -> List[TheoremData]:
+        prompts = []
+        data_order = []
+        
+        # 1. Collect all prompts
+        for i, item in enumerate(data):
+            if item.flag in [Flagging.DECLARATIVE, Flagging.AF_FAIL, Flagging.TC_FAIL]:
+                continue
+            prompts.extend([item.prompt_dir, item.prompt_neg])
+            data_order.append(i)
+
+        if not prompts:
+            return data
+
+        # 2. Call the API (Async wrapper to handle IO latency)
+        # We run the async function in a blocking way to match your existing synchronous structure
+        response_objects = asyncio.run(self._generate_batch_async(prompts))
+        
+        # 3. Process results
+        # The API returns a list of completion objects.
+        # response_objects[0] is for prompts[0], etc.
+        
+        for i, idx in enumerate(data_order):
+            item = data[idx]
+            
+            # The direct proof response is at index 2*i
+            resp_dir = response_objects[2*i]
+            candidates_dir = [choice.text for choice in resp_dir.choices]
+
+            # The negation proof response is at index 2*i+1
+            resp_neg = response_objects[2*i+1]
+            candidates_neg = [choice.text for choice in resp_neg.choices]
+
+            item.proof_candidates_dir = self.filter_proof_candidates(
+                target_param=item.param_dir,
+                target_body=item.body_dir,
+                proof_candidates=candidates_dir,
+                comment=item.problem_nl_dir
+            )
+            item.proof_candidates_neg = self.filter_proof_candidates(
+                target_param=item.param_neg,
+                target_body=item.body_neg,
+                proof_candidates=candidates_neg,
+                comment=item.problem_nl_neg
+            )
+            data[idx] = item
+        
+        return data
+    
+    def submit_proof(self, data: List[TheoremData]) -> List[TheoremData]:
+        to_submit = []
+        data_num = []
+        data_order = []
+
+        for i, item in enumerate(data):
+            if item.flag == Flagging.AF_FAIL or item.flag == Flagging.TC_FAIL:
+                continue
+            to_submit.extend(
+                [dict(code=full_lean_code, ast=False, tactics=False)
+                for _, full_lean_code in item.proof_candidates_dir]
+            )
+            data_num.append(len(to_submit))
+            to_submit.extend(
+                [dict(code=full_lean_code, ast=False, tactics=False)
+                for _, full_lean_code in item.proof_candidates_neg]
+            )
+            data_num.append(len(to_submit))
+            data_order.append(i)
+        request_ids = self.scheduler.submit_all_request(to_submit)
+        all_results = self.scheduler.get_all_request_outputs(request_ids)
+
+        for i, idx in enumerate(data_order):
+            item = data[idx]
+            mid = data_num[2*i]
+            results_dir = all_results[data_num[2*i-1]:mid] if i > 0 else all_results[:mid]
+            results_neg = all_results[mid:data_num[2*i+1]]
+
+            valid_proof = None
+            for (code, _), result in zip(item.proof_candidates_dir, results_dir):
+                if result['complete']:
+                    item.flag = Flagging.PROVED
+                    item.proof_candidates_dir = [(code, '')]
+                    valid_proof = code
+                    break
+            
+            if valid_proof is None:
+                for (code, _), result in zip(item.proof_candidates_neg, results_neg):
+                    if result['complete']:
+                        item.flag = Flagging.REFUTED
+                        item.proof_candidates_neg = [(code, '')]
+                        valid_proof = code
+                        break
+            
+            if valid_proof is None:
+                item.flag = Flagging.UNKNOWN
+
+            data[idx] = item
+        
+        return data
 
 
     def prove(self, dag: DAGModel, formalizer_header: str = HEADER) -> DAGModel:
         taskqueue = []
-        from datetime import datetime
-        start_time = datetime.now()
         for node in dag.nodes:
             if node.flag == Flagging.DECLARATIVE or node.flag == Flagging.AF_FAIL:
                 continue
 
             self.initialize_dialog()
+
+            proof_request = self.get_proof_prompts(
+                problem_nl_dir=node.perturbed_content,
+                problem_fl_dir=node.formalized_content
+            )
+
+            if proof_request.flag == Flagging.AF_FAIL:
+                node.flag = Flagging.AF_FAIL
+                continue
             
-            tc_request_id = self.get_tc_async(
+            proof_request.tc_request_id = self.get_tc_async(
                 formalized_problem=node.formalized_content,
                 header=formalizer_header
             )
-            
-            prove_requests = self.prove_single_async(
-                node.perturbed_content, 
-                node.formalized_content)
-            
-            taskqueue.append( (node, tc_request_id, prove_requests) )
+
+            taskqueue.append( (node, proof_request) )
         
-        print("Time to submit all tasks:", (datetime.now() - start_time).total_seconds())
-        # 1470.50615 sec
-        start_time = datetime.now()
-        for node, tc_request_id, prove_requests in taskqueue:
-            tc_result = self.get_tc_result(tc_request_id)
+        # Assert that none of the nodes in taskqueue are AF_FAIL
+        assert all(node.flag != Flagging.AF_FAIL for node, _ in taskqueue)
+        # First check tc-fail, mark them
+        for node, proof_request in taskqueue:
+            tc_result = self.get_tc_result(proof_request.tc_request_id)
             if not tc_result:
-                node.flag = Flagging.TC_FAIL
+                proof_request.flag = node.flag = Flagging.TC_FAIL
                 continue
+        
+        # Prepare data for proof
+        proof_attempt = [
+            proof_request for _, proof_request in taskqueue
+        ]
+        proof = self.get_proof_outputs(proof_attempt)
+        proof = self.submit_proof(proof)
 
-            if prove_requests is None:
-                node.flag = Flagging.AF_FAIL
-                continue
+        for (node, _), proof_request in zip(taskqueue, proof):
+            node.flag = proof_request.flag
+            if proof_request.flag in [Flagging.PROVED, Flagging.REFUTED]:
+                if proof_request.flag == Flagging.PROVED:
+                    node.formalized_content = proof_request.proof_candidates_dir[0][0]
+                else:
+                    node.formalized_content = proof_request.proof_candidates_neg[0][0]
 
-            node.formalized_content, node.flag = self.prove_single_result(prove_requests, node.formalized_content)
-        print("Time to process all results:", (datetime.now() - start_time).total_seconds())
-        breakpoint()
+        # And then process proof in batches
+    
         return dag
