@@ -1,8 +1,7 @@
-from typing import Optional, Protocol
 from abc import abstractmethod, ABC
 import re
-from vllm import LLM, SamplingParams
-from transformers import AutoTokenizer
+from typing import Tuple
+from vllm import SamplingParams
 from ..dag import DAGModel, Flagging
 
 class BaseFormalizer(ABC):
@@ -11,7 +10,10 @@ class BaseFormalizer(ABC):
     # [\s\S]*?    : Matches any char (including newlines) non-greedily.
     # sorry       : Stops exactly at the 'sorry' keyword.
     THEOREM_PATTERN = re.compile(r"(^theorem[\s\S]*?sorry)", re.MULTILINE | re.IGNORECASE)
-    
+    deterministic_sampling_params = SamplingParams(
+        temperature=0, 
+        max_tokens=16384,
+    )
     @abstractmethod
     def get_formal_statement_prompt(self, informal_problem: str) -> str:
         ...
@@ -40,18 +42,28 @@ class BaseFormalizer(ABC):
         self.dialog.pop()
         return prompt
     
-    def _formalize_prompt(self, informal_problems: list[str]) -> list[str]:
-        response = self.model.generate(informal_problems, sampling_params=self.sampling_params)
+    def _formalize_prompt(self, informal_problems: list[str]) -> Tuple[list[str], list[str]]:
+        # A good rule of thumb for batching: vLLM accepts a list of string prompts directly.
+        response = self.client.completions.create(
+            model=self.MODEL_DIR, # Ensure this matches the model name served in vLLM
+            prompt=informal_problems,
+            **self.gen_kwargs
+        )
+
         lean_codes = []
-        for i in range(len(informal_problems)):
+        raw_outputs = []
+        
+        # Iterate through the returned choices
+        for choice in response.choices:
             try:
-                # Extract text from the first candidate output
-                generated_text = response[i].outputs[0].text
+                generated_text = choice.text.strip()
+                raw_outputs.append(generated_text)
                 lean_code = self.parse_lean_code(generated_text)
             except Exception as e:
                 lean_code = None
             lean_codes.append(lean_code)
-        return lean_codes
+            
+        return lean_codes, raw_outputs
 
     def formalize(self, dag: DAGModel, cleanup_dialog: bool = True) -> DAGModel:
         prompts = []
@@ -63,23 +75,31 @@ class BaseFormalizer(ABC):
                 self.initialize_dialog()
             informal_problem = node.contextualized()
 
-            prompts.append(self._get_llm_prompt(informal_problem))
+            prompt = self._get_llm_prompt(informal_problem)
+
+            if len(prompt) > 4000:
+                node.formalized_content = "-- Failed to formalize"
+                node.flag = Flagging.AF_FAIL
+                node.formalizer_output = None
+                continue
+
+            prompts.append(prompt)
             nodes.append(node)
             
         if not prompts:
             return dag
 
-        lean_codes = self._formalize_prompt(prompts)
+        lean_codes, raw_outputs = self._formalize_prompt(prompts)
         
-        for node, lean_code, i in zip(nodes, lean_codes, range(len(lean_codes))):
+        for node, lean_code, raw_output in zip(nodes, lean_codes, raw_outputs):
             if lean_code is None:
                 node.formalized_content = "-- Failed to formalize"
                 node.flag = Flagging.AF_FAIL
+                node.formalizer_output = raw_output
             else:
                 # Replace the placeholder name with a unique step name
-                node.formalized_content = lean_code.replace("my_favorite_theorem", f"step_{i}")
-                # Reset flag if it was previously failed, or keep as is
-                if node.flag == Flagging.AF_FAIL: 
-                    node.flag = Flagging.UNKNOWN 
-
+                node.formalized_content = lean_code
+                print(lean_code)
+                node.flag = Flagging.UNKNOWN 
+                node.formalizer_output = raw_output
         return dag

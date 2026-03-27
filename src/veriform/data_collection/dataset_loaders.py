@@ -2,6 +2,7 @@
 Dataset loaders for various reasoning datasets.
 """
 
+from pprint import pprint
 import re
 from typing import List, Optional, Dict, Any
 from abc import ABC, abstractmethod
@@ -180,20 +181,24 @@ class ProcessBenchLoader(DatasetLoader):
 
         chains = []
         for idx, example in enumerate(data):
-            chain = ReasoningChain(
-                chain_id=example["id"], # e.g. 'gsm8k-200'
-                problem_statement=example["problem"],
-                steps=self.parse_reasoning_steps(example['dags']),
-                final_answer=example["dags"]["final_answer"],
-                source_dataset=example['split'],
-                metadata={
-                    "generator": example.get("generator", ""),
-                    "notes": example.get("dags", {}).get("metadata", {}).get("notes", ""),
-                    "difficulty": example.get("dags", {}).get("metadata", {}).get("difficulty", "unknown"),
-                    "final_answer_correct": example.get("final_answer_correct", None),
-                }
-            )
-            chains.append(chain)
+            try:
+                chain = ReasoningChain(
+                    chain_id=example["id"], # e.g. 'gsm8k-200'
+                    problem_statement=example["problem"],
+                    steps=self.parse_reasoning_steps(example['dags']),
+                    final_answer=example["dags"]["final_answer"],
+                    source_dataset=example['split'],
+                    metadata={
+                        "generator": example.get("generator", ""),
+                        "notes": example.get("dags", {}).get("metadata", {}).get("notes", ""),
+                        "difficulty": example.get("dags", {}).get("metadata", {}).get("difficulty", "unknown"),
+                        "final_answer_correct": example.get("final_answer_correct", None),
+                    }
+                )
+                chains.append(chain)
+            except Exception as e:
+                pprint(example)
+                breakpoint()
 
         return chains  
 

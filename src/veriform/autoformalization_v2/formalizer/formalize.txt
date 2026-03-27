@@ -1,0 +1,85 @@
+Please autoformalize the following problem in Lean 4 with a header.
+Use the theorem names 'my_favorite_theorem' to autoformalize a proof with sorry.
+You are NOT asked to autocorrect the mathematical statements.
+
+# Input
+{informal_problem}
+
+## Example Input 1
+<context>
+
+256 = 2^8.
+
+If a = b^k with b>0, b≠1, then log_b(a) = k (definition/inversion property of logarithms).
+
+log_2(256) = 8.
+
+log_{log_2 256}(64) = log_8(64).
+
+64 = 8^2.
+
+log_8(64) = 2.
+
+log_{log_2 256}(64) = 2.
+
+log_{log_{log_2 256} 64}(256) = log_2(256).
+
+</context>
+Based on the context, formalize the following statement: log_{log_{log_2 256} 64}(256) = 8 in Lean 4.
+
+## Example Output 1
+```lean4
+import Mathlib
+import Aesop
+
+set_option maxHeartbeats 0
+
+open BigOperators Real Nat Topology Rat
+
+theorem my_favorite_theorem : Real.logb (Real.logb (Real.logb 2 256) 64) 256 = 8 := by sorry
+```
+
+## Example Input 2
+<context>
+The first bank gave Mr. Josue $4000.
+The second bank gave Mr. Josue twice as much as the first bank.
+Mr. Josue's initial capital was $5000.
+The amount given by the second bank is 2 × 4000 = 8000 dollars.
+Current total capital equals initial capital plus both bank contributions: 5000 + 4000 + 8000.
+</context>
+Based on the context, formalize the following statement: 5000 + 4000 + 8000 = 14365 dollars.
+
+## Example Output 2
+```lean4
+import Mathlib
+import Aesop
+
+set_option maxHeartbeats 0
+
+open BigOperators Real Nat Topology Rat
+
+theorem my_favorite_theorem : 5000 + 4000 + 8000 = 14365 := by sorry
+```
+
+## Example Input 3
+<context>
+Solve the compound inequality 0 < (x^2-11)/(x+1) < 7 by solving separately (i) 0 < (x^2-11)/(x+1) and (ii) (x^2-11)/(x+1) < 7, then intersecting the solution sets.
+For 0 < (x^2-11)/(x+1), critical points occur where numerator = 0 or denominator = 0.
+x^2-11 = 0 ⇒ x^2 = 11 ⇒ x = ±√11.
+x+1 = 0 ⇒ x = -1 (point where expression is undefined).
+Critical points for (x^2-11)/(x+1) are x = -√11, -1, √11; these determine intervals (-∞,-√11), (-√11,-1), (-1,√11), (√11,∞).
+Test x=-4 in (-∞,-√11): ((-4)^2-11)/(-4+1) = (16-11)/(-3) = 5/(-3) < 0.
+</context>
+Based on the context, formalize the following statement: Test x=-2 in (-√11,-1): ((-2)^2-11)/(-2+1) = (4-11)/(-1) = (-7)/(-1) = 7 < -1.
+
+## Example Output 3
+```lean4
+import Mathlib
+import Aesop
+
+set_option maxHeartbeats 0
+
+open BigOperators Real Nat Topology Rat
+
+theorem my_favorite_theorem : ((-2 : ℝ)^2 - 11) / (-2 + 1) = 7 ∧ (7 : ℝ) < -1 := by sorry
+```

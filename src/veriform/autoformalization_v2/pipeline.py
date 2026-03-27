@@ -1,8 +1,5 @@
-from abc import ABC, abstractmethod
 from ..data_collection.reasoning_step import ReasoningChain
-from .dag import StandardDAGModel
-from .perturber import Perturber
-from .prover import Prover
+from .dag import DAGModel
 # --- Component Signatures (Protocols) ---
 # These define what your helper objects must look like ("Duck Typing").
 # It is 'spot on' for keeping dependencies loose.
@@ -24,13 +21,12 @@ class StandardPipeline:
         self.formalizer_model = formalizer_model
         self.prover_model = prover_model
     
-    def __call__(self, reasoning_chain: ReasoningChain) -> StandardDAGModel:
+    def __call__(self, reasoning_chain: ReasoningChain) -> DAGModel:
         """Execute the full pipeline."""
-        dag = StandardDAGModel(reasoning_chain)
-        
-        for i in range(len(dag)):
-            dag = self.perturbation_model.perturb(dag, step_id=i)
-        
+        dag = DAGModel(reasoning_chain)
+
+        dag = self.perturbation_model.perturb(dag)
+
         dag = self.formalizer_model.formalize(dag)
 
         dag = self.prover_model.prove(dag)

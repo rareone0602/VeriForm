@@ -9,7 +9,7 @@ class TestProver(unittest.TestCase):
     def test_prove(self):
         prover = DeepSeekProver(batch_size=2)
 
-        with open("tests/pkls/formalized_dag.pkl", "rb") as f:
+        with open("tests/pkls/formalized_perturbed_dag.pkl", "rb") as f:
             formalized_dag = pickle.load(f)
 
         proven_dag = prover.prove(formalized_dag)
@@ -19,7 +19,7 @@ class TestProver(unittest.TestCase):
             print(f"Perturbed node content: {node.perturbed_content}")
             print(f"Formalized node content: \n```\n{node.formalized_content}```")
         
-        with open("tests/pkls/proven_dag.pkl", "wb") as f:
+        with open("tests/pkls/proven_perturbed_dag.pkl", "wb") as f:
             pickle.dump(proven_dag, f)
 
         del prover

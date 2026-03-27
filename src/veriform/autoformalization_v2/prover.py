@@ -7,11 +7,14 @@ import backoff
 from abc import abstractmethod
 from transformers import AutoTokenizer
 import openai
-from openai import AsyncOpenAI  # Changed from vllm
+from openai import OpenAI 
 
 from .deepseek.prover.lean.verifier import Lean4ServerScheduler
 from .theorem_extractor import TheoremExtractor
 from .dag import DAGModel, Flagging
+
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 class Prover(Protocol):
     @abstractmethod
@@ -66,29 +69,35 @@ class TheoremData:
 
 """
 Run this first
-CUDA_VISIBLE_DEVICES=0 vllm serve deepseek-ai/DeepSeek-Prover-V2-7B \
-    --port 8000 \
+CUDA_VISIBLE_DEVICES=2 vllm serve deepseek-ai/DeepSeek-Prover-V2-7B \
+    --port 8002 \
     --tensor-parallel-size 1 \
     --dtype bfloat16 \
-    --gpu-memory-utilization 0.64 \
+    --gpu-memory-utilization 0.5 \
     --max-model-len 16384
 """
 class DeepSeekProver:
     MODEL_NAME = "deepseek-ai/DeepSeek-Prover-V2-7B"
-    def __init__(self, base_url: str = "http://localhost:8000/v1", batch_size: int = 1):
-        self.system_prompt = "You are an expert in mathematics and Lean 4."
-        
+    def __init__(self, 
+                 base_url: str = "http://localhost:8000/v1", 
+                 batch_size: int = 1, 
+                 negation_type: str = 'full'):
+        self.negation_type = negation_type
+
         # We keep the tokenizer LOCALLY just for formatting the prompt correctly
         self.tokenizer = AutoTokenizer.from_pretrained(self.MODEL_NAME)
         
         # Initialize the API Client
-        self.client = AsyncOpenAI(api_key="EMPTY", base_url=base_url)
+        self.client = OpenAI(
+            api_key="EMPTY", 
+            base_url=base_url,
+            timeout=7200, # 1 hour timeout
+        )
         
-        self.lean_pattern = re.compile(r"```lean4(.*?)```", re.DOTALL | re.IGNORECASE)
+        self.lean_pattern = re.compile(r"```lean4?(.*?)```", re.DOTALL | re.IGNORECASE)
         self.batch_size = batch_size
 
-        self.theorem_pattern = re.compile(r"theorem\s+(\w+)(.*?):\s*(.*?)\s*:=", re.DOTALL)
-        self.scheduler = Lean4ServerScheduler()
+        self.scheduler = Lean4ServerScheduler(max_concurrent_requests=64)
         self.theorem_extractor = TheoremExtractor()
 
         # Generation config (moved from SamplingParams)
@@ -129,26 +138,68 @@ class DeepSeekProver:
         return result['pass']
     
     def get_refute_theorem(self, formal_problem: str) -> str:
+        """
+        Generates a negation of the given theorem.
+        
+        Args:
+            formal_problem: The raw Lean 4 code of the original theorem.
+            negation_type: 
+                - 'strong': 'theorem not_T (x : A) : ¬ P' 
+                  (Asserts P is false for ALL inputs).
+                - 'full': 'theorem not_T_full : ¬ (∀ (x : A), P)' 
+                  (Asserts P is NOT TRUE for all inputs; i.e., a counter-example exists).
+        """
         name, param, body = self.theorem_extractor.get_last_theorem(formal_problem)
+        
         if name is None or body is None:
             raise ValueError("Cannot extract theorem name/body from formal problem.")
         
-        refute_name = f"not_{name} {param if param is not None else ''}".strip()
-        refute_body = f"¬ ({body})"
+        # Clean up params: handle None and whitespace
+        param_str = param.strip() if param else ""
+        
+        if self.negation_type == 'strong':
+            # Strategy: Keep params in signature, negate the body only.
+            # Good for specific values (e.g. "theorem t : 1 = 2")
+            refute_name = f"not_{name}_strong"
+            # Re-attach params to the name if they exist
+            declaration_params = f" {param_str}" if param_str else ""
+            refute_body = f"¬ ({body})"
+            
+            return f"theorem {refute_name}{declaration_params} : {refute_body} := by sorry"
 
-        refute_theorem = f"theorem {refute_name} : {refute_body} := by sorry"
-        return refute_theorem
+        elif self.negation_type == 'full':
+            # Strategy: Remove params from signature, wrap them in ∀, and negate the whole lot.
+            # Good for general laws (e.g. "theorem t (n : Nat) : n > 0")
+            refute_name = f"not_{name}_full"
+            
+            if param_str:
+                # We have parameters, so we construct: ¬ (∀ (x : T), body)
+                # Note: In Lean 4, '∀ (x : T) (y : U), P' is valid syntax.
+                refute_body = f"¬ (∀ {param_str}, {body})"
+            else:
+                # No parameters? Then Full Negation is identical to Strong Negation.
+                refute_body = f"¬ ({body})"
+
+            return f"theorem {refute_name} : {refute_body} := by sorry"
+            
+        else:
+            raise ValueError("Invalid negation type provided.")
 
 
     def filter_proof_candidates(self, target_param: Optional[str], target_body: Optional[str], proof_candidates: List[str], comment: str = '') -> List[Tuple[str, str]]:
         valid_candidates = []
+
+        def _normalize(s: Optional[str]) -> str:
+            if not s: return ""
+            return " ".join(s.split())
+
         for candidate in proof_candidates:
             try:
                 lean_code = self.parse_lean_code(candidate)
             except ValueError:
                 continue
             proof_name, proof_param, proof_body = self.theorem_extractor.get_last_theorem(lean_code)
-            if proof_param != target_param or proof_body != target_body:
+            if _normalize(proof_param) != _normalize(target_param) or _normalize(proof_body) != _normalize(target_body):
                 continue
             valid_candidates.append(
                 (
@@ -198,41 +249,13 @@ class DeepSeekProver:
         max_tries=5,
         jitter=backoff.full_jitter
     )
-    async def _safe_request(self, prompt: str):
-        """
-        Sends a single request with automatic retries for transient errors.
-        """
-        return await self.client.completions.create(
+    def _generate_batch(self, prompts: List[str]):
+        # No 'await' here. This line blocks until completion.
+        return self.client.completions.create(
             model=self.MODEL_NAME,
-            prompt=prompt,
+            prompt=prompts,
             **self.gen_kwargs
         )
-
-    async def _generate_batch_async(self, prompts: List[str]):
-        """Helper to send requests to the API in parallel with robustness."""
-        tasks = []
-        for prompt in prompts:
-            # We call the decorated helper function here
-            tasks.append(self._safe_request(prompt))
-        
-        # return_exceptions=True ensures that if one request permanently fails 
-        # (e.g. Context Length Error), it doesn't crash the whole batch immediately.
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Optional: Handle any remaining exceptions (like 400 Bad Request)
-        final_results = []
-        for res in results:
-            if isinstance(res, Exception):
-                print(f"Request failed permanently: {res}")
-                # You might want to return a dummy object or re-raise
-                # creating a dummy object to prevent downstream crashes:
-                class DummyChoice: text = ""
-                class DummyResponse: choices = [DummyChoice()] * self.batch_size
-                final_results.append(DummyResponse())
-            else:
-                final_results.append(res)
-                
-        return final_results
 
     def get_proof_outputs(self, data: List[TheoremData]) -> List[TheoremData]:
         prompts = []
@@ -250,23 +273,21 @@ class DeepSeekProver:
 
         # 2. Call the API (Async wrapper to handle IO latency)
         # We run the async function in a blocking way to match your existing synchronous structure
-        response_objects = asyncio.run(self._generate_batch_async(prompts))
         
+        response = self._generate_batch(prompts)
+        response_choices = response.choices
+        # [dir_1_1, ..., dir_1_b, neg_1_1, ..., neg_1_b, dir_2_1, ..., dir_2_b, neg_2_1, ..., neg_2_b, ...]
+        b = self.batch_size 
         # 3. Process results
-        # The API returns a list of completion objects.
-        # response_objects[0] is for prompts[0], etc.
         
         for i, idx in enumerate(data_order):
             item = data[idx]
-            
-            # The direct proof response is at index 2*i
-            resp_dir = response_objects[2*i]
-            candidates_dir = [choice.text for choice in resp_dir.choices]
 
-            # The negation proof response is at index 2*i+1
-            resp_neg = response_objects[2*i+1]
-            candidates_neg = [choice.text for choice in resp_neg.choices]
+            resp_dir = response_choices[2*b*i:2*b*i + b]
+            candidates_dir = [choice.text.strip() for choice in resp_dir]
 
+            resp_neg = response_choices[2*b*i+b:2*b*(i+1)]
+            candidates_neg = [choice.text.strip() for choice in resp_neg]
             item.proof_candidates_dir = self.filter_proof_candidates(
                 target_param=item.param_dir,
                 target_body=item.body_dir,
@@ -338,7 +359,7 @@ class DeepSeekProver:
     def prove(self, dag: DAGModel, formalizer_header: str = HEADER) -> DAGModel:
         taskqueue = []
         for node in dag.nodes:
-            if node.flag == Flagging.DECLARATIVE or node.flag == Flagging.AF_FAIL:
+            if node.flag == Flagging.DECLARATIVE or node.flag == Flagging.AF_FAIL or len(node.formalized_content) > 10000:
                 continue
 
             self.initialize_dialog()
@@ -357,25 +378,36 @@ class DeepSeekProver:
                 header=formalizer_header
             )
 
-            taskqueue.append( (node, proof_request) )
+            tc_testing_id = self.get_tc_async(
+                formalized_problem=self.get_refute_theorem(node.formalized_content),
+                header=formalizer_header
+            )
+
+            taskqueue.append( (node, proof_request, tc_testing_id) )
         
         # Assert that none of the nodes in taskqueue are AF_FAIL
-        assert all(node.flag != Flagging.AF_FAIL for node, _ in taskqueue)
+        assert all(node.flag != Flagging.AF_FAIL for node, _, _ in taskqueue)
         # First check tc-fail, mark them
-        for node, proof_request in taskqueue:
+        for node, proof_request, tc_testing_id in taskqueue:
             tc_result = self.get_tc_result(proof_request.tc_request_id)
+            tc_testing_result = self.get_tc_result(tc_testing_id)
+
+            if not tc_testing_result and tc_result:
+                print(self.get_refute_theorem(node.formalized_content))
+                print(node.formalized_content)
+
             if not tc_result:
                 proof_request.flag = node.flag = Flagging.TC_FAIL
                 continue
         
         # Prepare data for proof
         proof_attempt = [
-            proof_request for _, proof_request in taskqueue
+            proof_request for _, proof_request, _ in taskqueue
         ]
         proof = self.get_proof_outputs(proof_attempt)
         proof = self.submit_proof(proof)
 
-        for (node, _), proof_request in zip(taskqueue, proof):
+        for (node, _, _), proof_request in zip(taskqueue, proof):
             node.flag = proof_request.flag
             if proof_request.flag in [Flagging.PROVED, Flagging.REFUTED]:
                 if proof_request.flag == Flagging.PROVED:

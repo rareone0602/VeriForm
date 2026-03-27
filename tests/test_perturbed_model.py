@@ -1,27 +1,29 @@
 import unittest
 
-from veriform.data_collection.dataset_loaders import GSM8KLoader
-from veriform.autoformalization_v2.dag import StandardDAGModel
+from veriform.data_collection.dataset_loaders import GSM8KLoader, ProcessBenchLoader
+from veriform.autoformalization_v2.dag import DAGModel
 from veriform.autoformalization_v2.perturber import StandardPerturber
 from pprint import pprint
 
 class TestPerturbedModel(unittest.TestCase):
+    
     def test_perturbation(self):
-        gsm8k = GSM8KLoader(split="test", num_samples=1)
-        chains = gsm8k.load()
-        dag = StandardDAGModel(chains[0])
+        processbench = ProcessBenchLoader(file_path='./data/processed/dags.json', num_samples=1000)
+        chains = processbench.load()
+        dag = DAGModel(chains[900])
         perturber = StandardPerturber(
-            p=1.0, 
+            p=1, 
             operator_swap=True, 
-            value_change=False, 
-            logical_negation=False)
+            value_change=True, 
+            logical_negation=True)
         
-        for node in dag.nodes:
+        dag = perturber.perturb(dag)
+
+        for node in dag:
+            print(node.contextualized())
+
             print(f"Original node content: {node.content}")
-        for i in range(len(dag)):
-            perturbed_dag = perturber.perturb(dag, step_id=i)
-        for node in perturbed_dag.nodes:
             print(f"Perturbed node content: {node.perturbed_content}")
 
 # Run the tests
-# python -m unittest tests.test_perturbed_model
+# python -m unittest tests.test_perturbed_model.TestPerturbedModel.test_perturbation

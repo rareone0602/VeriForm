@@ -1,15 +1,12 @@
 import unittest
 
-from src.veriform.data_collection.dataset_loaders import GSM8KLoader, MATHLoader
-from src.veriform.data_collection.reasoning_step import ReasoningChain
+from src.veriform.data_collection.dataset_loaders import GSM8KLoader
 
-from veriform.autoformalization_v2.dag import StandardDAGModel
 from veriform.autoformalization_v2.perturber import StandardPerturber
-from veriform.autoformalization_v2.formalizer.stepfun import StepfunFormalizer
+from veriform.autoformalization_v2.formalizer import GoedelFormalizer
 from veriform.autoformalization_v2.prover import DeepSeekProver
 from veriform.autoformalization_v2.pipeline import StandardPipeline
 
-from pprint import pprint
 
 
 class TestPipeline(unittest.TestCase):
@@ -21,7 +18,7 @@ class TestPipeline(unittest.TestCase):
             operator_swap=False, 
             value_change=True, 
             logical_negation=False)
-        formalizer = StepfunFormalizer()
+        formalizer = GoedelFormalizer()
         prover = DeepSeekProver()
 
         pipeline = StandardPipeline(perturber, formalizer, prover)
@@ -40,7 +37,7 @@ class TestPipeline(unittest.TestCase):
             operator_swap=False, 
             value_change=True, 
             logical_negation=False)
-        formalizer = StepfunFormalizer()
+        formalizer = GoedelFormalizer()
         prover = DeepSeekProver()
 
         pipeline = StandardPipeline(perturber, formalizer, prover)

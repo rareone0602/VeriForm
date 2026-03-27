@@ -26,6 +26,7 @@ venv/
 env/
 ENV/
 .venv
+/veriform/
 
 # IDEs
 .vscode/
@@ -45,20 +46,15 @@ ENV/
 htmlcov/
 .tox/
 
-# Data
-data/raw/*
-!data/raw/.gitkeep
-data/processed/*
-!data/processed/.gitkeep
-data/outputs/*
-!data/outputs/.gitkeep
+# Data (symlink to /scratch — exclude entirely)
+/data
 *.pkl
 
-# Experiments
-experiments/outputs/
-experiments/*.log
-experiments/*.json
-experiments/*.png
+# Experiments (symlink to /scratch — exclude entirely)
+/experiments
+
+# Logs
+/logs
 
 # API keys and secrets
 .env

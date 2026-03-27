@@ -1,7 +1,7 @@
 import unittest
 
 from veriform.data_collection.dataset_loaders import GSM8KLoader, ProcessBenchLoader
-from veriform.autoformalization_v2.dag import StandardDAGModel
+from veriform.autoformalization_v2.dag import DAGModel
 from veriform.autoformalization_v2.perturber import StandardPerturber
 from veriform.autoformalization_v2.formalizer import StepfunFormalizer, KiminaFormalizer, GoedelFormalizer, HeraldFormalizer
 import pickle
@@ -25,20 +25,19 @@ class BaseFormalizerTest(unittest.TestCase):
     def test_formalization_gsm8k(self):
         gsm8k = GSM8KLoader(split="test", num_samples=1)
         chains = gsm8k.load()
-        dag = StandardDAGModel(chains[0])
+        dag = DAGModel(chains[0])
         formalizer = self.formalizer_class()
         self._run_formalization_test(dag, formalizer, "tests/pkls/formalized_dag.pkl")
 
     def test_formalization_perturbed_processbench(self):
         processbench = ProcessBenchLoader(file_path='./data/processed/dags.json', num_samples=1)
         chains = processbench.load()
-        dag = StandardDAGModel(chains[0])
+        dag = DAGModel(chains[0])
         perturber = StandardPerturber(p=1, operator_swap=True, value_change=True, logical_negation=True)
         formalizer = self.formalizer_class()
         
         sorry_count = 0
-        for i in range(len(dag)):
-            dag = perturber.perturb(dag, step_id=i)
+        dag = perturber.perturb(dag)
                 
         self._run_formalization_test(dag, formalizer, "tests/pkls/formalized_perturbed_processbench_dag.pkl")
 
@@ -53,7 +52,7 @@ class BaseFormalizerTest(unittest.TestCase):
     def test_perturbed_formalization(self):
         gsm8k = GSM8KLoader(split="test", num_samples=1)
         chains = gsm8k.load()
-        dag = StandardDAGModel(chains[0])
+        dag = DAGModel(chains[0])
         perturber = StandardPerturber(p=1.0, operator_swap=True, value_change=True, logical_negation=True)
         
         for step_id in range(3):

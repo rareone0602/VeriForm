@@ -1,7 +1,7 @@
 import unittest
 from veriform.data_collection.dataset_loaders import GSM8KLoader, MATHLoader, ProcessBenchLoader
 from veriform.data_collection.reasoning_step import ReasoningChain
-from veriform.autoformalization_v2.dag import StandardDAGModel
+from veriform.autoformalization_v2.dag import DAGModel
 
 class TestDatasetLoaders(unittest.TestCase):
 
@@ -35,7 +35,7 @@ class TestDatasetLoaders(unittest.TestCase):
         self.assertGreater(len(chains), 0)
         self.assertIsInstance(chains[0], ReasoningChain)
         
-        dag_model = StandardDAGModel(chains[1])
+        dag_model = DAGModel(chains[1])
         for i in range(len(dag_model)):
             node = dag_model[i]
             if node.is_declarative:
