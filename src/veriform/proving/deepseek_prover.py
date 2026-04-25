@@ -9,9 +9,9 @@ from transformers import AutoTokenizer
 import openai
 from openai import OpenAI 
 
-from .deepseek.prover.lean.verifier import Lean4ServerScheduler
+from .lean_server.prover.lean.verifier import Lean4ServerScheduler
 from .theorem_extractor import TheoremExtractor
-from .dag import DAGModel, Flagging
+from veriform.preprocessing.dag import DAGModel, Flagging
 
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"

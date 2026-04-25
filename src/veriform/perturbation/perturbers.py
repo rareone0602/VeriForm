@@ -3,7 +3,7 @@ import os
 import re
 import json
 from typing import Tuple, Optional
-from veriform.autoformalization_v2.dag import DAGModel, Flagging
+from veriform.preprocessing.dag import DAGModel, Flagging
 from dotenv import load_dotenv
 
 
@@ -324,9 +324,9 @@ class OpenAIPerturber(BaseLLMPerturber):
         return response.choices[0].message.content
 
 if __name__ == "__main__":
-    from veriform.data_collection.dataset_loaders import GSM8KLoader
+    from veriform.data.loaders import GSM8KLoader
     from pprint import pprint
-    from veriform.autoformalization_v2.dag import DAGModel
+    from veriform.preprocessing.dag import DAGModel
     
     gsm8k = GSM8KLoader(split="test", num_samples=1)
     chains = gsm8k.load()

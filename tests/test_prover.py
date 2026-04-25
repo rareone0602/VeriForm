@@ -1,7 +1,7 @@
 import unittest
 
 
-from veriform.autoformalization_v2.prover import DeepSeekProver
+from veriform.proving.deepseek_prover import DeepSeekProver
 import pickle
 
 class TestProver(unittest.TestCase):

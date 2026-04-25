@@ -1,5 +1,5 @@
-from ..data_collection.reasoning_step import ReasoningChain
-from .dag import DAGModel
+from .data.reasoning_chain import ReasoningChain
+from .preprocessing.dag import DAGModel
 # --- Component Signatures (Protocols) ---
 # These define what your helper objects must look like ("Duck Typing").
 # It is 'spot on' for keeping dependencies loose.

@@ -1,12 +1,13 @@
 """
-Data collection and management module.
+Dataset loading and reasoning-chain data structures.
 """
 
-from .reasoning_step import ReasoningStep, ReasoningChain, StepType
-from .dataset_loaders import (
+from .reasoning_chain import ReasoningStep, ReasoningChain, StepType
+from .loaders import (
     DatasetLoader,
     GSM8KLoader,
     MATHLoader,
+    ProcessBenchLoader,
     CustomLoader,
     get_loader
 )
@@ -18,6 +19,7 @@ __all__ = [
     "DatasetLoader",
     "GSM8KLoader",
     "MATHLoader",
+    "ProcessBenchLoader",
     "CustomLoader",
     "get_loader",
 ]

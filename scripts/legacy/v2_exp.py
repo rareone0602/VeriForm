@@ -7,17 +7,17 @@ from datetime import datetime
 from tqdm import tqdm
 
 # --- Internal Imports ---
-from veriform.data_collection.dataset_loaders import ProcessBenchLoader
-from veriform.autoformalization_v2.dag import DAGModel
-from veriform.autoformalization_v2.perturber import StandardPerturber
-from veriform.autoformalization_v2.formalizer import (
+from veriform.data.loaders import ProcessBenchLoader
+from veriform.preprocessing.dag import DAGModel
+from veriform.perturbation.perturbers import StandardPerturber
+from veriform.formalization import (
     StepfunFormalizer, 
     KiminaFormalizer, 
     GoedelFormalizer, 
     HeraldFormalizer
 )
-from veriform.autoformalization_v2.prover import DeepSeekProver
-from veriform.autoformalization_v2.pipeline import StandardPipeline
+from veriform.proving.deepseek_prover import DeepSeekProver
+from veriform.pipeline import StandardPipeline
 
 # --- Configuration & Constants ---
 # Centralise these lists so you can easily add new datasets or formalizers later.

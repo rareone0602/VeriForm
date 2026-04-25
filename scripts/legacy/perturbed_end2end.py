@@ -12,10 +12,10 @@ from datetime import datetime
 from tqdm import tqdm
 
 # --- Internal Imports ---
-from veriform.autoformalization_v2.dag import DAGModel, Flagging
-from veriform.data_collection.dataset_loaders import ProcessBenchLoader
-from veriform.autoformalization_v2.theorem_extractor import TheoremExtractor
-from veriform.autoformalization_v2.deepseek.prover.lean.verifier import Lean4ServerScheduler
+from veriform.preprocessing.dag import DAGModel, Flagging
+from veriform.data.loaders import ProcessBenchLoader
+from veriform.proving.theorem_extractor import TheoremExtractor
+from veriform.proving.lean_server.prover.lean.verifier import Lean4ServerScheduler
 
 
 scheduler = Lean4ServerScheduler(max_concurrent_requests=64)

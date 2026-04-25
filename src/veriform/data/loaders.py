@@ -11,7 +11,7 @@ import random
 import json
 from datasets import load_dataset
 
-from .reasoning_step import ReasoningStep, ReasoningChain, StepType
+from .reasoning_chain import ReasoningStep, ReasoningChain, StepType
 
 
 class DatasetLoader(ABC):

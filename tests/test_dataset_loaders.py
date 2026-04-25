@@ -1,7 +1,7 @@
 import unittest
-from veriform.data_collection.dataset_loaders import GSM8KLoader, MATHLoader, ProcessBenchLoader
-from veriform.data_collection.reasoning_step import ReasoningChain
-from veriform.autoformalization_v2.dag import DAGModel
+from veriform.data.loaders import GSM8KLoader, MATHLoader, ProcessBenchLoader
+from veriform.data.reasoning_chain import ReasoningChain
+from veriform.preprocessing.dag import DAGModel
 
 class TestDatasetLoaders(unittest.TestCase):
 

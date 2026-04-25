@@ -1,7 +1,7 @@
 import re
 import unittest
 from typing import Optional, Tuple
-from veriform.autoformalization_v2.theorem_extractor import TheoremExtractor
+from veriform.proving.theorem_extractor import TheoremExtractor
 
 # ==========================================
 # TEST SUITE

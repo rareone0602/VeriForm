@@ -1,11 +1,11 @@
 import unittest
 
-from src.veriform.data_collection.dataset_loaders import GSM8KLoader
+from veriform.data.loaders import GSM8KLoader
 
-from veriform.autoformalization_v2.perturber import StandardPerturber
-from veriform.autoformalization_v2.formalizer import GoedelFormalizer
-from veriform.autoformalization_v2.prover import DeepSeekProver
-from veriform.autoformalization_v2.pipeline import StandardPipeline
+from veriform.perturbation.perturbers import StandardPerturber
+from veriform.formalization import GoedelFormalizer
+from veriform.proving.deepseek_prover import DeepSeekProver
+from veriform.pipeline import StandardPipeline
 
 
 

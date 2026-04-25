@@ -10,9 +10,9 @@ from datetime import datetime
 import backoff
 import openai
 
-from veriform.data_collection.dataset_loaders import ProcessBenchLoader
-from veriform.autoformalization_v2.deepseek.prover.lean.verifier import Lean4ServerScheduler
-from veriform.autoformalization_v2.theorem_extractor import TheoremExtractor
+from veriform.data.loaders import ProcessBenchLoader
+from veriform.proving.lean_server.prover.lean.verifier import Lean4ServerScheduler
+from veriform.proving.theorem_extractor import TheoremExtractor
 
 
 _TOKEN_RE = re.compile(

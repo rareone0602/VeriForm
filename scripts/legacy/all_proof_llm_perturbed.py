@@ -11,9 +11,9 @@ from datetime import datetime
 from tqdm import tqdm
 
 # --- Internal Imports ---
-from veriform.data_collection.dataset_loaders import ProcessBenchLoader
-from veriform.autoformalization_v2.dag import DAGModel, Flagging
-from veriform.autoformalization_v2.prover import DeepSeekProver
+from veriform.data.loaders import ProcessBenchLoader
+from veriform.preprocessing.dag import DAGModel, Flagging
+from veriform.proving.deepseek_prover import DeepSeekProver
 
 # --- Configuration & Constants ---
 # Centralise these lists so you can easily add new datasets or formalizers later.

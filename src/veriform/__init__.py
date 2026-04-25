@@ -6,7 +6,7 @@ A framework for measuring the faithfulness of autoformalization systems.
 
 __version__ = "0.1.0"
 
-from veriform.benchmark import BenchmarkRunner
 from veriform.config import BenchmarkConfig
+from veriform.pipeline import StandardPipeline
 
-__all__ = ["BenchmarkRunner", "BenchmarkConfig", "__version__"]
+__all__ = ["BenchmarkConfig", "StandardPipeline", "__version__"]

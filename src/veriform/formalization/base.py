@@ -2,7 +2,7 @@ from abc import abstractmethod, ABC
 import re
 from typing import Tuple
 from vllm import SamplingParams
-from ..dag import DAGModel, Flagging
+from veriform.preprocessing.dag import DAGModel, Flagging
 
 class BaseFormalizer(ABC):
     # Regex Explanation:

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Any, Optional, Protocol, runtime_checkable
 from dataclasses import dataclass, field
-from veriform.data_collection.reasoning_step import ReasoningChain, StepType
+from veriform.data.reasoning_chain import ReasoningChain, StepType
 from enum import Enum
 
 class Flagging(Enum):
@@ -122,7 +122,7 @@ open BigOperators Real Nat Topology Rat
         return ret.strip()
 
 if __name__ == "__main__":
-    from veriform.data_collection.dataset_loaders import GSM8KLoader
+    from veriform.data.loaders import GSM8KLoader
     from pprint import pprint
 
     gsm8k = GSM8KLoader(split="test", num_samples=1)

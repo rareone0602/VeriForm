@@ -3,7 +3,7 @@ import json
 from tqdm import tqdm
 
 # --- Internal Imports ---
-from veriform.data_collection.dataset_loaders import ProcessBenchLoader
+from veriform.data.loaders import ProcessBenchLoader
 
 
 processbench = ProcessBenchLoader(file_path='./data/processed/dags.json', num_samples=1179)

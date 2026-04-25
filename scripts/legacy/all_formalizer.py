@@ -8,10 +8,10 @@ from datetime import datetime
 from tqdm import tqdm
 
 # --- Internal Imports ---
-from veriform.data_collection.dataset_loaders import ProcessBenchLoader
-from veriform.autoformalization_v2.dag import DAGModel
-from veriform.autoformalization_v2.perturber import StandardPerturber
-from veriform.autoformalization_v2.formalizer import (
+from veriform.data.loaders import ProcessBenchLoader
+from veriform.preprocessing.dag import DAGModel
+from veriform.perturbation.perturbers import StandardPerturber
+from veriform.formalization import (
     StepfunFormalizer, 
     KiminaFormalizer, 
     GoedelFormalizer, 

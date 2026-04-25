@@ -1,9 +1,9 @@
 import unittest
 
-from veriform.data_collection.dataset_loaders import GSM8KLoader, ProcessBenchLoader
-from veriform.autoformalization_v2.dag import DAGModel
-from veriform.autoformalization_v2.perturber import StandardPerturber
-from veriform.autoformalization_v2.formalizer import StepfunFormalizer, KiminaFormalizer, GoedelFormalizer, HeraldFormalizer
+from veriform.data.loaders import GSM8KLoader, ProcessBenchLoader
+from veriform.preprocessing.dag import DAGModel
+from veriform.perturbation.perturbers import StandardPerturber
+from veriform.formalization import StepfunFormalizer, KiminaFormalizer, GoedelFormalizer, HeraldFormalizer
 import pickle
 
 class BaseFormalizerTest(unittest.TestCase):
