@@ -11,6 +11,7 @@ from openai import OpenAI
 
 from .lean_server.prover.lean.verifier import Lean4ServerScheduler
 from .theorem_extractor import TheoremExtractor
+from .negation import LeanNegator, NegationMode
 from veriform.preprocessing.dag import DAGModel, Flagging
 
 import os
@@ -78,27 +79,32 @@ CUDA_VISIBLE_DEVICES=2 vllm serve deepseek-ai/DeepSeek-Prover-V2-7B \
 """
 class DeepSeekProver:
     MODEL_NAME = "deepseek-ai/DeepSeek-Prover-V2-7B"
-    def __init__(self, 
-                 base_url: str = "http://localhost:8000/v1", 
-                 batch_size: int = 1, 
-                 negation_type: str = 'full'):
+    def __init__(self,
+                 base_url: str = "http://localhost:8000/v1",
+                 batch_size: int = 1,
+                 negation_type: str = 'full',
+                 negator: Optional[LeanNegator] = None):
         self.negation_type = negation_type
 
         # We keep the tokenizer LOCALLY just for formatting the prompt correctly
         self.tokenizer = AutoTokenizer.from_pretrained(self.MODEL_NAME)
-        
+
         # Initialize the API Client
         self.client = OpenAI(
-            api_key="EMPTY", 
+            api_key="EMPTY",
             base_url=base_url,
             timeout=7200, # 1 hour timeout
         )
-        
+
         self.lean_pattern = re.compile(r"```lean4?(.*?)```", re.DOTALL | re.IGNORECASE)
         self.batch_size = batch_size
 
         self.scheduler = Lean4ServerScheduler(max_concurrent_requests=64)
         self.theorem_extractor = TheoremExtractor()
+        # Lean-side theorem negation. Caller may pass a shared LeanNegator;
+        # otherwise we own one and start it lazily on first use.
+        self.negator = negator if negator is not None else LeanNegator()
+        self._owns_negator = negator is None
 
         # Generation config (moved from SamplingParams)
         self.gen_kwargs = {
@@ -112,6 +118,8 @@ class DeepSeekProver:
     def __del__(self):
         if hasattr(self, 'scheduler'):
             self.scheduler.close()
+        if hasattr(self, 'negator') and getattr(self, '_owns_negator', False):
+            self.negator.close()
 
     def parse_lean_code(self, response_text: str) -> str:
         """
@@ -138,52 +146,17 @@ class DeepSeekProver:
         return result['pass']
     
     def get_refute_theorem(self, formal_problem: str) -> str:
-        """
-        Generates a negation of the given theorem.
-        
-        Args:
-            formal_problem: The raw Lean 4 code of the original theorem.
-            negation_type: 
-                - 'strong': 'theorem not_T (x : A) : ¬ P' 
-                  (Asserts P is false for ALL inputs).
-                - 'full': 'theorem not_T_full : ¬ (∀ (x : A), P)' 
-                  (Asserts P is NOT TRUE for all inputs; i.e., a counter-example exists).
-        """
-        name, param, body = self.theorem_extractor.get_last_theorem(formal_problem)
-        
-        if name is None or body is None:
-            raise ValueError("Cannot extract theorem name/body from formal problem.")
-        
-        # Clean up params: handle None and whitespace
-        param_str = param.strip() if param else ""
-        
-        if self.negation_type == 'strong':
-            # Strategy: Keep params in signature, negate the body only.
-            # Good for specific values (e.g. "theorem t : 1 = 2")
-            refute_name = f"not_{name}_strong"
-            # Re-attach params to the name if they exist
-            declaration_params = f" {param_str}" if param_str else ""
-            refute_body = f"¬ ({body})"
-            
-            return f"theorem {refute_name}{declaration_params} : {refute_body} := by sorry"
+        """Generate the negation of a Lean theorem via the Negate.lean helper.
 
-        elif self.negation_type == 'full':
-            # Strategy: Remove params from signature, wrap them in ∀, and negate the whole lot.
-            # Good for general laws (e.g. "theorem t (n : Nat) : n > 0")
-            refute_name = f"not_{name}_full"
-            
-            if param_str:
-                # We have parameters, so we construct: ¬ (∀ (x : T), body)
-                # Note: In Lean 4, '∀ (x : T) (y : U), P' is valid syntax.
-                refute_body = f"¬ (∀ {param_str}, {body})"
-            else:
-                # No parameters? Then Full Negation is identical to Strong Negation.
-                refute_body = f"¬ ({body})"
-
-            return f"theorem {refute_name} : {refute_body} := by sorry"
-            
-        else:
-            raise ValueError("Invalid negation type provided.")
+        Modes (preserved from the original regex implementation):
+          - 'strong': keep the original binders, negate only the body
+              theorem not_<name>_strong (x : A) : ¬ P
+          - 'full':   wrap binders in ∀, negate the whole proposition
+              theorem not_<name>_full : ¬ (∀ (x : A), P)
+        """
+        if self.negation_type not in ('strong', 'full'):
+            raise ValueError(f"Invalid negation type: {self.negation_type!r}")
+        return self.negator.negate(formal_problem, mode=self.negation_type)
 
 
     def filter_proof_candidates(self, target_param: Optional[str], target_body: Optional[str], proof_candidates: List[str], comment: str = '') -> List[Tuple[str, str]]:

@@ -1,9 +1,12 @@
-"""Pluggable backends for negating Lean theorem statements.
+"""Negation of natural-language CoT statements (perturbation-time).
 
-Today there is one backend (regex) extracted from StandardPerturber.
-A Lean-parser-based backend is planned (see CLAUDE.md improvement #2),
-which is why this lives behind a Protocol — drop a new file in here that
-implements ``NegationBackend.negate`` and switch via ``get_backend(name)``.
+Used by StandardPerturber.logical_negation_str to flip the meaning of an
+English step before passing it to the formaliser. Today the only backend
+is regex-based; the Protocol exists so a future NLP-aware backend can
+slot in without touching StandardPerturber.
+
+NOT to be confused with Lean-side theorem negation (which lives in
+src/veriform/proving/negation.py and operates on formalised Lean code).
 """
 
 from typing import Protocol, Tuple, runtime_checkable
@@ -21,7 +24,6 @@ class NegationBackend(Protocol):
 
 _REGISTRY = {
     "regex": RegexNegationBackend,
-    # "lean_parser": LeanParserNegationBackend,  # FUTURE — see CLAUDE.md improvement #2
 }
 
 

@@ -9,6 +9,11 @@ name = "Ruqola"
 name = "ruqola"
 root = "Main"
 
+[[lean_exe]]
+name = "negate"
+root = "Negate"
+supportInterpreter = true
+
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4.git"

@@ -8,7 +8,9 @@ Active perturbers:
 
 Future homes (see plan/scaffolds in this package):
   - brokenmath_perturber.py  (paper TODO)
-  - lean_negation/           (CLAUDE.md improvement #2)
+  - nl_negation/             (regex backend for negating English statements)
+The Lean-side theorem negation lives in src/veriform/proving/negation.py
+(CLAUDE.md improvement #2; backed by Negate.lean metaprogramming).
 """
 
 from .perturbers import (

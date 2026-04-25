@@ -4,7 +4,7 @@ import re
 import json
 from typing import Tuple, Optional
 from veriform.preprocessing.dag import DAGModel, Flagging
-from veriform.perturbation.lean_negation import NegationBackend, get_backend
+from veriform.perturbation.nl_negation import NegationBackend, get_backend
 from dotenv import load_dotenv
 
 
@@ -126,7 +126,7 @@ class StandardPerturber:
     def logical_negation_str(self, content: str) -> Tuple[str, bool]:
         """Delegate to the configured NegationBackend (regex by default).
 
-        See src/veriform/perturbation/lean_negation/ for backend implementations.
+        See src/veriform/perturbation/nl_negation/ for backend implementations.
         """
         return self.negation_backend.negate(content)
 

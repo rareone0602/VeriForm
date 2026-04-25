@@ -1,7 +1,8 @@
-"""Regex-based negation: identical behaviour to the original StandardPerturber.logical_negation_str.
+"""Regex-based negation of natural-language statements.
 
-Kept intentionally narrow so the Lean-parser-based backend (planned, see
-CLAUDE.md improvement #2) can land alongside without touching this file.
+Identical behaviour to the original StandardPerturber.logical_negation_str.
+Operates on English; the Lean-side counterpart lives in
+src/veriform/proving/negation.py.
 """
 
 import re
