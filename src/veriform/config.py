@@ -1,95 +1,80 @@
+"""Pydantic configuration schema for the experiment runner.
+
+A YAML matching this schema is the single source of truth for one
+benchmark run. Override individual fields from the CLI via dotted paths
+(e.g. ``--set perturbation.p=1.0 formalization.type=goedel``).
 """
-Configuration classes for Veriform benchmarks.
-"""
 
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
 
-
-class BenchmarkConfig(BaseModel):
-    """Configuration for a benchmark run."""
-
-    # Perturbation settings
-    perturbation_probabilities: List[float] = Field(
-        default=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
-        description="List of perturbation probabilities to test"
-    )
-    perturbation_strategies: List[str] = Field(
-        default=["operator_swap", "value_change", "logical_negation"],
-        description="List of perturbation strategies to apply"
-    )
-
-    # Dataset settings
-    dataset_name: str = Field(
-        default="gsm8k",
-        description="Name of the reasoning dataset to use"
-    )
-    sample_size: int = Field(
-        default=1000,
-        description="Number of reasoning steps to sample per probability"
-    )
-
-    # Autoformalization settings
-    autoformalization_model: str = Field(
-        default="gpt-4",
-        description="Model to use for autoformalization"
-    )
-    autoformalization_temperature: float = Field(
-        default=0.0,
-        description="Temperature for autoformalization model"
-    )
-    max_retries: int = Field(
-        default=3,
-        description="Maximum retries for API calls"
-    )
-
-    # Lean verification settings
-    lean_timeout: int = Field(
-        default=30,
-        description="Timeout in seconds for Lean verification"
-    )
-    use_sorry_context: bool = Field(
-        default=True,
-        description="Whether to include previous steps as sorry lemmas"
-    )
-
-    # Output settings
-    output_dir: str = Field(
-        default="./experiments/outputs",
-        description="Directory to save outputs"
-    )
-    save_intermediate: bool = Field(
-        default=True,
-        description="Whether to save intermediate results"
-    )
-
-    # Random seed
-    random_seed: Optional[int] = Field(
-        default=42,
-        description="Random seed for reproducibility"
-    )
-
-    # API keys (loaded from environment)
-    openai_api_key: Optional[str] = None
-    anthropic_api_key: Optional[str] = None
-
-    class Config:
-        extra = "allow"
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class PerturbationConfig(BaseModel):
-    """Configuration for perturbation strategies."""
+class DatasetSection(BaseModel):
+    """How to load CoT chains. Currently the active path is ProcessBench."""
+    type: Literal["processbench"] = "processbench"
+    file_path: str = "./data/processed/dags.json"
+    num_samples: Optional[int] = 1179
+    seed: int = 42
 
-    strategy_name: str
-    strategy_params: Dict[str, Any] = Field(default_factory=dict)
-    probability: float = Field(ge=0.0, le=1.0)
+
+class PerturbationSection(BaseModel):
+    """Which perturber to instantiate and its parameters."""
+    type: Literal["regex", "deepseek_pre", "gemini", "openai"] = "regex"
+    p: float = Field(0.5, ge=0.0, le=1.0)
+    params: Dict[str, Any] = Field(default_factory=dict)
 
 
-class DatasetConfig(BaseModel):
-    """Configuration for dataset loading."""
+class FormalizationSection(BaseModel):
+    type: Literal["stepfun", "kimina", "goedel", "herald"] = "stepfun"
+    sampling: Literal["recommended", "deterministic"] = "deterministic"
+    params: Dict[str, Any] = Field(default_factory=dict)
 
-    name: str
-    split: str = "train"
-    num_samples: Optional[int] = None
-    filter_criteria: Optional[Dict[str, Any]] = None
-    preprocessing_steps: List[str] = Field(default_factory=list)
+
+class ProvingSection(BaseModel):
+    """DeepSeekProver settings. Set ``enabled: false`` to skip the prover stage
+    (useful for smoke-testing the perturbation+formalization pipeline)."""
+    enabled: bool = True
+    type: Literal["deepseek"] = "deepseek"
+    batch_size: int = 2
+    negation: Literal["strong", "full"] = "full"
+    base_url: str = "http://localhost:8001/v1"
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class OutputSection(BaseModel):
+    dir: str = "experiments/outputs"
+    save_lean_files: bool = True
+    save_intermediate: bool = True
+    save_heatmap: bool = True
+
+
+class SemanticsSection(BaseModel):
+    """ProofBridge-based semantic-faithfulness re-weighting. Disabled until
+    the wrapper in src/veriform/semantics/ is implemented."""
+    enabled: bool = False
+    encoder_path: Optional[str] = None
+    drift_threshold: Optional[float] = None
+
+
+class RunConfig(BaseModel):
+    """Top-level config consumed by scripts/run_benchmark.py."""
+    model_config = ConfigDict(extra="forbid")
+
+    dataset: DatasetSection = DatasetSection()
+    perturbation: PerturbationSection = PerturbationSection()
+    formalization: FormalizationSection = FormalizationSection()
+    proving: ProvingSection = ProvingSection()
+    output: OutputSection = OutputSection()
+    semantics: SemanticsSection = SemanticsSection()
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> "RunConfig":
+        import yaml
+        with open(path) as f:
+            return cls(**(yaml.safe_load(f) or {}))
+
+
+# --- Backwards-compat alias for any external code importing BenchmarkConfig ---
+BenchmarkConfig = RunConfig
