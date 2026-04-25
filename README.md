@@ -33,9 +33,8 @@ veriform/
 │   ├── pipeline.py      # StandardPipeline composition
 │   └── config.py        # Pydantic RunConfig schema
 ├── scripts/
-│   ├── run_benchmark.py # Single config-driven entry point
-│   ├── shell/           # exps_*.sh drivers (vLLM server orchestration)
-│   └── legacy/          # Original v2_exp.py / all_proof.py / etc., kept for reference
+│   ├── run_benchmark.py # End-to-end config-driven entry point
+│   └── run_formalize.py # Throughput-optimized phase 1 (async fan-out vs vLLM)
 ├── configs/             # YAML configs consumed by run_benchmark.py
 ├── tests/
 ├── data/                # Symlink to /scratch — not in git

@@ -304,21 +304,4 @@ class OpenAIPerturber(BaseLLMPerturber):
         )
         return response.choices[0].message.content
 
-if __name__ == "__main__":
-    from veriform.data.loaders import GSM8KLoader
-    from pprint import pprint
-    from veriform.preprocessing.dag import DAGModel
-    
-    gsm8k = GSM8KLoader(split="test", num_samples=1)
-    chains = gsm8k.load()
-    dag_model = DAGModel(chains[0])
-    # perturber = StandardPerturber(p=1.0)
-    perturber = GeminiPerturber(p=1.0)
-    for chain in chains:
-        
-        dag = dag_model.build_dag(chain)
-        
-        print(dag)
-        perturbed_dag = perturber.perturb(dag)
-        print(perturbed_dag)
 

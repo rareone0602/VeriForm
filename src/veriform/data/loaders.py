@@ -1,17 +1,21 @@
-"""
-Dataset loaders for various reasoning datasets.
-"""
+"""Dataset loaders.
 
-from pprint import pprint
-import re
-from typing import List, Optional, Dict, Any
-from abc import ABC, abstractmethod
-import random
+Only ProcessBenchLoader is in active use — it reads the pre-processed
+DAG JSON file produced by the upstream LLM-based DAG-construction step
+and yields ReasoningChain objects to feed the rest of the pipeline.
+
+Other dataset-specific loaders (GSM8K, MATH, Custom) were removed in
+favour of the single ProcessBench-derived path; restore from git history
+if a different dataset becomes relevant.
+"""
 
 import json
-from datasets import load_dataset
+import random
+from abc import ABC, abstractmethod
+from pprint import pprint
+from typing import Any, Dict, List, Optional
 
-from .reasoning_chain import ReasoningStep, ReasoningChain, StepType
+from .reasoning_chain import ReasoningChain, ReasoningStep, StepType
 
 
 class DatasetLoader(ABC):
@@ -26,262 +30,65 @@ class DatasetLoader(ABC):
     @abstractmethod
     def load(self) -> List[ReasoningChain]:
         """Load and parse the dataset into reasoning chains."""
-        pass
 
     @abstractmethod
     def parse_reasoning_steps(self, example: Dict[str, Any]) -> List[ReasoningStep]:
         """Parse an example into reasoning steps."""
-        pass
 
-
-class GSM8KLoader(DatasetLoader):
-    """Loader for GSM8K dataset."""
-
-    def load(self) -> List[ReasoningChain]:
-        """Load GSM8K dataset."""
-        dataset = load_dataset("gsm8k", "main", split=self.split)
-
-        if self.num_samples:
-            indices = random.sample(range(len(dataset)), min(self.num_samples, len(dataset)))
-            dataset = dataset.select(indices)
-
-        chains = []
-        for idx, example in enumerate(dataset):
-            chain = ReasoningChain(
-                chain_id=str(idx),
-                problem_statement=example["question"],
-                steps=self.parse_reasoning_steps(example),
-                final_answer=self._extract_final_answer(example["answer"]),
-                source_dataset="gsm8k",
-                metadata={"original_index": idx}
-            )
-            chains.append(chain)
-
-        return chains
-
-    def parse_reasoning_steps(self, example: Dict[str, Any]) -> List[ReasoningStep]:
-        """Parse GSM8K solution into reasoning steps."""
-        solution = example["answer"]
-
-        # Split by newlines and filter empty lines
-        lines = [line.strip() for line in solution.split("\n") if line.strip()]
-
-        steps = []
-        for step_idx, line in enumerate(lines):
-            # Skip the final answer line
-            line = re.sub("(<<.+>>)?", "", line, flags=re.DOTALL)
-            if line.startswith("####"):
-                continue
-
-            # Classify step type based on content
-            step_type = self._classify_step(line)
-
-            step = ReasoningStep(
-                step_id=step_idx,
-                content=line,
-                step_type=step_type,
-                previous_steps=[i for i in range(step_idx)],
-                metadata={"line_number": step_idx}
-            )
-            steps.append(step)
-
-        return steps
-
-    def _classify_step(self, content: str) -> StepType:
-        """Classify the type of reasoning step."""
-        if any(op in content for op in ["+", "-", "*", "/", "="]):
-            return StepType.CALCULATION
-        elif any(word in content.lower() for word in ["therefore", "thus", "so", "hence"]):
-            return StepType.LOGICAL_DEDUCTION
-        else:
-            return StepType.OTHER
-
-    def _extract_final_answer(self, answer: str) -> str:
-        """Extract the final numerical answer."""
-        match = re.search(r"####\s*(.+)", answer)
-        if match:
-            return match.group(1).strip()
-        return ""
-
-
-class MATHLoader(DatasetLoader):
-    """Loader for MATH dataset."""
-
-    def load(self) -> List[ReasoningChain]:
-        """Load MATH dataset."""
-        dataset = load_dataset("hendrycks/math", split=self.split)
-
-        if self.num_samples:
-            indices = random.sample(range(len(dataset)), min(self.num_samples, len(dataset)))
-            dataset = dataset.select(indices)
-
-        chains = []
-        for idx, example in enumerate(dataset):
-            chain = ReasoningChain(
-                chain_id=str(idx),
-                problem_statement=example["problem"],
-                steps=self.parse_reasoning_steps(example),
-                final_answer=example["solution"],
-                source_dataset="math",
-                metadata={
-                    "original_index": idx,
-                    "level": example.get("level", "unknown"),
-                    "type": example.get("type", "unknown")
-                }
-            )
-            chains.append(chain)
-
-        return chains
-
-    def parse_reasoning_steps(self, example: Dict[str, Any]) -> List[ReasoningStep]:
-        """Parse MATH solution into reasoning steps."""
-        solution = example["solution"]
-
-        # Split by sentences or double newlines
-        lines = re.split(r'\n\n+|\. (?=[A-Z])', solution)
-        lines = [line.strip() for line in lines if line.strip()]
-
-        steps = []
-        for step_idx, line in enumerate(lines):
-            step_type = self._classify_step(line)
-
-            step = ReasoningStep(
-                step_id=step_idx,
-                content=line,
-                step_type=step_type,
-                previous_steps=[i for i in range(step_idx)],
-                metadata={"line_number": step_idx}
-            )
-            steps.append(step)
-
-        return steps
-
-    def _classify_step(self, content: str) -> StepType:
-        """Classify the type of reasoning step."""
-        if "$" in content and any(op in content for op in ["=", "+", "-", "*", "/"]):
-            return StepType.ALGEBRAIC_MANIPULATION
-        elif any(word in content.lower() for word in ["substitute", "plug in", "replace"]):
-            return StepType.SUBSTITUTION
-        elif any(word in content.lower() for word in ["simplify", "reduce", "combine"]):
-            return StepType.SIMPLIFICATION
-        else:
-            return StepType.OTHER
 
 class ProcessBenchLoader(DatasetLoader):
+    """Reads a pre-processed dags.json file (column-major-then-row-major,
+    one entry per ProcessBench reasoning chain) and yields ReasoningChain
+    objects with the per-step DAG already populated."""
+
     def __init__(self, file_path: str, **kwargs):
         super().__init__(**kwargs)
         self.file_path = file_path
 
-    
     def load(self) -> List[ReasoningChain]:
-        with open(self.file_path, 'r') as f:
+        with open(self.file_path, "r") as f:
             data = json.load(f)
         if self.num_samples:
             data = random.sample(data, min(self.num_samples, len(data)))
 
-        chains = []
-        for idx, example in enumerate(data):
+        chains: List[ReasoningChain] = []
+        for example in data:
             try:
                 chain = ReasoningChain(
-                    chain_id=example["id"], # e.g. 'gsm8k-200'
+                    chain_id=example["id"],
                     problem_statement=example["problem"],
-                    steps=self.parse_reasoning_steps(example['dags']),
+                    steps=self.parse_reasoning_steps(example["dags"]),
                     final_answer=example["dags"]["final_answer"],
-                    source_dataset=example['split'],
+                    source_dataset=example["split"],
                     metadata={
                         "generator": example.get("generator", ""),
                         "notes": example.get("dags", {}).get("metadata", {}).get("notes", ""),
                         "difficulty": example.get("dags", {}).get("metadata", {}).get("difficulty", "unknown"),
                         "final_answer_correct": example.get("final_answer_correct", None),
-                    }
+                    },
                 )
                 chains.append(chain)
-            except Exception as e:
+            except Exception:
                 pprint(example)
-                breakpoint()
-
-        return chains  
-
-    def parse_reasoning_steps(self, example: Dict[str, Any]) -> List[ReasoningStep]:
-        """Parse ProcessBench steps into reasoning steps."""
-        steps_data = example['nodes']
-        steps = []
-        for step_idx, step_content in enumerate(steps_data):
-            assert step_content['node_id'] == f'step_{step_idx + 1}', "Step IDs are not in expected order."
-            step = ReasoningStep(
-                step_id=step_idx,
-                content=step_content['content'],
-                step_type=StepType.OTHER if step_content['statement_type'] == 'declarative' else StepType.CALCULATION,
-                previous_steps=[i for i in range(step_idx)],
-            )
-            steps.append(step)
-        return steps
-
-
-class CustomLoader(DatasetLoader):
-    """Loader for custom datasets with flexible format."""
-
-    def __init__(self, data: List[Dict[str, Any]], **kwargs):
-        super().__init__(**kwargs)
-        self.data = data
-
-    def load(self) -> List[ReasoningChain]:
-        """Load custom data."""
-        if self.num_samples:
-            data = random.sample(self.data, min(self.num_samples, len(self.data)))
-        else:
-            data = self.data
-
-        chains = []
-        for idx, example in enumerate(data):
-            chain = ReasoningChain(
-                chain_id=idx,
-                problem_statement=example.get("problem", ""),
-                steps=self.parse_reasoning_steps(example),
-                final_answer=example.get("answer", ""),
-                source_dataset="custom",
-                metadata=example.get("metadata", {})
-            )
-            chains.append(chain)
+                raise
 
         return chains
 
     def parse_reasoning_steps(self, example: Dict[str, Any]) -> List[ReasoningStep]:
-        """Parse custom format into reasoning steps."""
-        steps_data = example.get("steps", [])
-
-        steps = []
+        steps_data = example["nodes"]
+        steps: List[ReasoningStep] = []
         for step_idx, step_content in enumerate(steps_data):
-            if isinstance(step_content, str):
-                content = step_content
-                step_type = StepType.OTHER
-            elif isinstance(step_content, dict):
-                content = step_content.get("content", "")
-                step_type = StepType(step_content.get("type", "other"))
-            else:
-                continue
-
-            step = ReasoningStep(
-                step_id=step_idx,
-                content=content,
-                step_type=step_type,
-                previous_steps=[i for i in range(step_idx)],
+            assert step_content["node_id"] == f"step_{step_idx + 1}", "Step IDs are not in expected order."
+            steps.append(
+                ReasoningStep(
+                    step_id=step_idx,
+                    content=step_content["content"],
+                    step_type=(
+                        StepType.OTHER
+                        if step_content["statement_type"] == "declarative"
+                        else StepType.CALCULATION
+                    ),
+                    previous_steps=list(range(step_idx)),
+                )
             )
-            steps.append(step)
-
         return steps
-
-
-def get_loader(dataset_name: str, **kwargs) -> DatasetLoader:
-    """Factory function to get the appropriate dataset loader."""
-    loaders = {
-        "gsm8k": GSM8KLoader,
-        "math": MATHLoader,
-        "custom": CustomLoader,
-    }
-
-    loader_class = loaders.get(dataset_name.lower())
-    if loader_class is None:
-        raise ValueError(f"Unknown dataset: {dataset_name}. Available: {list(loaders.keys())}")
-
-    return loader_class(**kwargs)

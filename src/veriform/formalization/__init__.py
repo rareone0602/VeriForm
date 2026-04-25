@@ -7,7 +7,6 @@ from .fine_tuned import (
     GoedelFormalizer,
     HeraldFormalizer,
 )
-# from .llm_based import OpenAIFormalizer, GeminiFormalizer, ClaudeFormalizer
 
 FORMALIZER_REGISTRY = {
     "stepfun": StepfunFormalizer,

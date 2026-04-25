@@ -121,14 +121,3 @@ open BigOperators Real Nat Topology Rat
             ret += node.formalized_content + "\n\n"
         return ret.strip()
 
-if __name__ == "__main__":
-    from veriform.data.loaders import GSM8KLoader
-    from pprint import pprint
-
-    gsm8k = GSM8KLoader(split="test", num_samples=1)
-    chains = gsm8k.load()
-    dag_model = DAGModel(chains[0])
-    for chain in chains:
-        pprint(chain)
-        dag = dag_model.build_dag(chain)
-        pprint(dag)

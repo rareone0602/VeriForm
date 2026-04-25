@@ -1,7 +1,4 @@
-"""Heatmap rendering for per-dataset flag distributions.
-
-Lifted from scripts/legacy/v2_exp.py::draw_heatmap.
-"""
+"""Heatmap rendering for per-dataset flag distributions."""
 
 from pathlib import Path
 from typing import Any, Dict, Union

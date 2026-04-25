@@ -18,7 +18,7 @@ This is the implementation of `paper/main.tex`. Use can also refer to `README.md
 
 ```
 src/veriform/
-  data/              # ReasoningChain + dataset loaders (ProcessBench, GSM8K, MATH)
+  data/              # ReasoningChain + ProcessBenchLoader (the active dataset loader)
   preprocessing/     # DAGModel — turns a ReasoningChain into a DAG of nodes
   perturbation/      # Inject errors into nodes
     perturbers.py            # StandardPerturber (regex), LLM perturbers
@@ -34,7 +34,7 @@ src/veriform/
   config.py          # Pydantic RunConfig schema
 ```
 
-Single entry point: `scripts/run_benchmark.py --config configs/<name>.yaml`. CLI overrides via `--set key.path=value`. Legacy multi-script flow lives in `scripts/legacy/` for reference (will be removed once the new entry point has been used to reproduce the paper results).
+Entry points: `scripts/run_benchmark.py --config configs/<name>.yaml` (end-to-end) and `scripts/run_formalize.py --formalizer <name> --p <prob> --port <vllm-port>` (throughput-optimized phase 1, async fan-out against vLLM). CLI overrides via `--set key.path=value` on `run_benchmark.py`.
 
 ## Improvement
 

@@ -1,9 +1,7 @@
 """Per-node statistics, confusion matrix, and per-dataset heatmap counters.
 
-Lifted from scripts/legacy/v2_exp.py and scripts/legacy/all_proof.py. The two
-legacy paths used near-identical logic with one operating on `DAGNode` objects
-(in-memory) and the other on dict-shaped JSON nodes; both modes are supported
-here via the small `_flag_value` adapter.
+Supports both `DAGNode` objects (in-memory) and dict-shaped JSON nodes
+(loaded from a results pkl/json) via the small `_flag_value` adapter.
 """
 
 from typing import Any, Dict, List, Union
