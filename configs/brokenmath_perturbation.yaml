@@ -1,0 +1,34 @@
+# Paper TODO: BrokenMath-style LLM perturbation as the main perturbation strategy.
+# This config is a placeholder until perturbation/brokenmath_perturber.py is wired.
+
+dataset:
+  type: processbench
+  file_path: ./data/processed/dags.json
+  num_samples: 1179
+  seed: 42
+
+perturbation:
+  type: openai          # TODO: switch to 'brokenmath' once registered in PERTURBER_REGISTRY
+  p: 1.0
+  params:
+    model_name: gpt-4o
+
+formalization:
+  type: stepfun
+  sampling: deterministic
+
+proving:
+  enabled: true
+  type: deepseek
+  batch_size: 2
+  negation: full
+  base_url: http://localhost:8001/v1
+
+output:
+  dir: experiments/outputs
+  save_lean_files: true
+  save_intermediate: true
+  save_heatmap: true
+
+semantics:
+  enabled: false

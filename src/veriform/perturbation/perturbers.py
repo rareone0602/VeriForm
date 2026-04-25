@@ -4,6 +4,7 @@ import re
 import json
 from typing import Tuple, Optional
 from veriform.preprocessing.dag import DAGModel, Flagging
+from veriform.perturbation.lean_negation import NegationBackend, get_backend
 from dotenv import load_dotenv
 
 
@@ -20,11 +21,13 @@ class StandardPerturber:
         operator_swap: bool = True,
         value_change: bool = True,
         logical_negation: bool = True,
+        negation_backend: Optional[NegationBackend] = None,
     ):
         self.p = p
         self.operator_swap = operator_swap
         self.value_change = value_change
         self.logical_negation = logical_negation
+        self.negation_backend = negation_backend or get_backend("regex")
         
         # Robust number pattern: Matches floats, ints, negatives
         # Avoids matching "v1" or "3." at end of sentence by checking boundaries
@@ -121,33 +124,11 @@ class StandardPerturber:
         return content[:target_match.start()] + new_str + content[target_match.end():], True
 
     def logical_negation_str(self, content: str) -> Tuple[str, bool]:
+        """Delegate to the configured NegationBackend (regex by default).
+
+        See src/veriform/perturbation/lean_negation/ for backend implementations.
         """
-        Robust logical negation using proper grammar placement.
-        """
-        # 1. Removal: Check for existing negations
-        if re.search(r'\bnot\b', content):
-            return re.sub(r'\bnot\s+', '', content, count=1), True
-        
-        # 2. Insertion: Handle Modal Verbs and "To Be"
-        # We want "is not", "can not", "will not"
-        # But "run" -> "does not run" (Hard for regex, sticking to modals for safety)
-        
-        modals = r'\b(is|are|was|were|has|have|had|can|could|will|would|shall|should|must|might)\b'
-        
-        matches = list(re.finditer(modals, content, re.IGNORECASE))
-        if matches:
-            # Pick the main verb (heuristically the first or second one)
-            match = matches[0] 
-            
-            # Insert ' not' AFTER the verb
-            head = content[:match.end()]
-            tail = content[match.end():]
-            return f"{head} not{tail}", True
-        
-        # Fallback for action verbs (risky without NLP, so we prepend strictly)
-        # "It holds that..." -> "It does not hold that..." is hard.
-        # "It is false that " prefix is the safest 'catch-all' negation.
-        return f"It is false that {content}", True
+        return self.negation_backend.negate(content)
 
     def perturb_str(self, content: str) -> Tuple[str, bool]:
         applying_fn = []

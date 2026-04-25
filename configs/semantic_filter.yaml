@@ -1,0 +1,38 @@
+# Paper TODO: re-weight TPR/FPR using ProofBridge NL<->Lean similarity.
+# Activates the SemanticDriftFilter once src/veriform/semantics/ is implemented.
+
+dataset:
+  type: processbench
+  file_path: ./data/processed/dags.json
+  num_samples: 1179
+  seed: 42
+
+perturbation:
+  type: regex
+  p: 0.5
+  params:
+    operator_swap: true
+    value_change: true
+    logical_negation: true
+
+formalization:
+  type: stepfun
+  sampling: deterministic
+
+proving:
+  enabled: true
+  type: deepseek
+  batch_size: 2
+  negation: full
+  base_url: http://localhost:8001/v1
+
+output:
+  dir: experiments/outputs
+  save_lean_files: true
+  save_intermediate: true
+  save_heatmap: true
+
+semantics:
+  enabled: true
+  encoder_path: null      # TODO: ProofBridge model path
+  drift_threshold: 0.5
