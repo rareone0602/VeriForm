@@ -1,17 +1,30 @@
 #!/usr/bin/env bash
-# Phase 1 driver: run scripts/run_formalize.py for stepfun, kimina, goedel,
-# herald at p=1.0 and p=0.0, on a single GPU. Brings vLLM up per formalizer,
-# runs both p values against it, then shuts it down before the next.
+# Phase 1 driver for the BrokenMath perturbation arm. Mirrors
+# run_phase1_all.sh but: (1) passes --perturber brokenmath, (2) routes output
+# to data/output/brokenmath-<severity>-perturbed/formalized/, (3) only runs at
+# p=1.0 equivalent — BrokenMath is full-coverage by construction (the JSONL
+# contains a row per formalizable step).
 #
-# Usage:  bash scripts/run_phase1_all.sh [GPU_ID] [PORT] [formalizer ...]
+# The unperturbed (p=0.0) baseline reuses the existing
+# data/output/regex-perturbed/formalized/<f>/0/ pickles — same DAGs untouched.
+#
+# Usage:  bash scripts/run_phase1_brokenmath.sh <severity> [GPU_ID] [PORT] [formalizer ...]
+# severity must be one of {soft, medium, hard}; selects both the JSONL file
+# (new_perturbations_gpt5.2_<severity>.jsonl at repo root) and the output sub-tree.
 # Defaults: GPU_ID=1, PORT=8002, all four formalizers.
-# Example: bash scripts/run_phase1_all.sh 0 8002 herald
-#
-# Resume-safe: run_formalize.py skips chains whose pickle already exists,
-# so re-invoking this script picks up where it left off. Pass a subset of
-# formalizers to skip booting vLLM for ones that are already complete.
 
 set -euo pipefail
+
+if [ $# -lt 1 ]; then
+    echo "usage: $0 <severity> [GPU_ID] [PORT] [formalizer ...]" >&2
+    echo "       severity in {soft, medium, hard}" >&2
+    exit 2
+fi
+SEVERITY="$1"; shift
+case "$SEVERITY" in
+    soft|medium|hard) ;;
+    *) echo "invalid severity: $SEVERITY (expected soft|medium|hard)" >&2; exit 2 ;;
+esac
 
 GPU_ID="${1:-1}"
 PORT="${2:-8002}"
@@ -26,6 +39,14 @@ PY="$REPO/veriform/bin/python"
 VLLM="$REPO/veriform/bin/vllm"
 LOG_DIR="${LOG_DIR:-/tmp/veriform_logs}"
 mkdir -p "$LOG_DIR"
+
+OUTPUT_DIR="$REPO/data/output/brokenmath-${SEVERITY}-perturbed/formalized"
+JSONL_PATH="$REPO/new_perturbations_gpt5.2_${SEVERITY}.jsonl"
+
+if [ ! -f "$JSONL_PATH" ]; then
+    echo "JSONL not found: $JSONL_PATH" >&2
+    exit 2
+fi
 
 declare -A MODEL=(
     [stepfun]="stepfun-ai/StepFun-Formalizer-7B"
@@ -76,7 +97,7 @@ cd "$REPO"
 
 for name in "${NAMES[@]}"; do
     model="${MODEL[$name]}"
-    vllm_log="$LOG_DIR/vllm_${name}.log"
+    vllm_log="$LOG_DIR/vllm_${name}_brokenmath_${SEVERITY}.log"
     echo "=== [$name] starting vllm ($model) on GPU $GPU_ID port $PORT ==="
     pid=$(start_vllm "$model" "$vllm_log")
     trap 'stop_vllm '"$pid"' || true' EXIT
@@ -86,21 +107,21 @@ for name in "${NAMES[@]}"; do
     fi
     echo "=== [$name] vllm ready (pid=$pid) ==="
 
-    for p in 1.0 0.0; do
-        run_log="$LOG_DIR/${name}_p$(printf '%03d' $(awk -v x="$p" 'BEGIN{printf "%d", x*100+0.5}')).log"
-        echo "=== [$name] run_formalize.py --p $p  (log: $run_log) ==="
-        "$PY" scripts/run_formalize.py \
-            --formalizer "$name" \
-            --p "$p" \
-            --port "$PORT" \
-            --concurrency 64 \
-            --sampling deterministic \
-            2>&1 | tee "$run_log"
-    done
+    run_log="$LOG_DIR/${name}_brokenmath_${SEVERITY}_p100.log"
+    echo "=== [$name] run_formalize.py --perturber brokenmath  (log: $run_log) ==="
+    "$PY" scripts/run_formalize.py \
+        --formalizer "$name" \
+        --perturber brokenmath \
+        --brokenmath_jsonl "$JSONL_PATH" \
+        --output_dir "$OUTPUT_DIR" \
+        --port "$PORT" \
+        --concurrency 64 \
+        --sampling deterministic \
+        2>&1 | tee "$run_log"
 
     echo "=== [$name] stopping vllm (pid=$pid) ==="
     stop_vllm "$pid"
     trap - EXIT
 done
 
-echo "=== all formalizers done ==="
+echo "=== all formalizers done (brokenmath phase 1, severity=${SEVERITY}) ==="

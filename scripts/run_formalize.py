@@ -47,6 +47,7 @@ from tqdm.asyncio import tqdm_asyncio
 from veriform.data.loaders import ProcessBenchLoader
 from veriform.formalization import FORMALIZER_REGISTRY
 from veriform.perturbation.perturbers import StandardPerturber
+from veriform.perturbation.brokenmath_perturber import BrokenMathPerturber
 from veriform.preprocessing.dag import DAGModel, Flagging
 
 
@@ -126,7 +127,12 @@ async def _formalize_chain(
 
 
 async def main_async(args: argparse.Namespace) -> None:
-    save_dir = Path(args.output_dir) / args.formalizer / f"{int(args.p * 100 + 0.5)}"
+    # BrokenMath is full-coverage by construction — the JSONL contains a row
+    # per formalizable step, so probability-of-perturbation has no meaning.
+    # Force the output sub-directory to 100/ so it sits alongside the regex
+    # p=1.0 outputs in the layout downstream consumers expect.
+    p_pct = 100 if args.perturber == "brokenmath" else int(args.p * 100 + 0.5)
+    save_dir = Path(args.output_dir) / args.formalizer / f"{p_pct}"
     save_dir.mkdir(parents=True, exist_ok=True)
 
     chains = ProcessBenchLoader(
@@ -138,12 +144,15 @@ async def main_async(args: argparse.Namespace) -> None:
         rng.shuffle(chains)
     print(f"Loaded {len(chains)} chains; saving pickles under {save_dir}")
 
-    perturber = StandardPerturber(
-        p=args.p,
-        operator_swap=True,
-        value_change=True,
-        logical_negation=True,
-    )
+    if args.perturber == "brokenmath":
+        perturber = BrokenMathPerturber(jsonl_path=args.brokenmath_jsonl)
+    else:
+        perturber = StandardPerturber(
+            p=args.p,
+            operator_swap=True,
+            value_change=True,
+            logical_negation=True,
+        )
     formalizer_cls = FORMALIZER_REGISTRY[args.formalizer]
     formalizer = formalizer_cls(
         sampling=args.sampling,
@@ -209,13 +218,17 @@ async def main_async(args: argparse.Namespace) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--formalizer", required=True, choices=list(FORMALIZER_REGISTRY))
-    p.add_argument("--p", type=float, default=1.0, help="perturbation probability")
+    p.add_argument("--p", type=float, default=1.0, help="perturbation probability (regex perturber only; ignored for brokenmath)")
+    p.add_argument("--perturber", choices=["regex", "brokenmath"], default="regex",
+                   help="perturbation source: regex (StandardPerturber) or brokenmath (lookup over a JSONL of pre-computed GPT-5.2 outputs)")
+    p.add_argument("--brokenmath_jsonl", default="brokenmath_perturbations/new_perturbations_gpt5.2_medium.jsonl",
+                   help="path to the BrokenMath perturbation JSONL (used iff --perturber brokenmath)")
     p.add_argument("--port", type=int, default=8002, help="vLLM OpenAI-compatible server port")
     p.add_argument("--num_samples", type=int, default=None, help="cap chains (None = all)")
     p.add_argument("--concurrency", type=int, default=64, help="max concurrent chain requests in flight")
     p.add_argument("--sampling", choices=["recommended", "deterministic"], default="deterministic")
-    p.add_argument("--dags_path", default="./data/processed/dags.json")
-    p.add_argument("--output_dir", default="./data/regex_perturbed/formalized")
+    p.add_argument("--dags_path", default="./data/parsed/unperturbed/dags.json")
+    p.add_argument("--output_dir", default="./data/output/regex-perturbed/formalized")
     p.add_argument("--seed", type=int, default=42, help="seed for perturbation + chain ordering")
     p.add_argument("--shuffle", action="store_true", help="shuffle chains for load-balanced restart")
     args = p.parse_args()

@@ -18,7 +18,6 @@ prompt format is checked separately on a mocked instance.
 """
 
 import unittest
-from unittest.mock import MagicMock, patch
 
 from veriform.formalization import (
     GoedelFormalizer,
@@ -117,15 +116,13 @@ class TestStepfunPrompt(unittest.TestCase):
 
 
 class TestHeraldPrompt(unittest.TestCase):
-    """Herald's __init__ loads vllm.LLM into GPU; mock the model away so we
-    can still pin the prompt-building behaviour."""
+    """Herald is now an OpenAI-server-mode formalizer (mirrors Kimina/Goedel);
+    instantiation is cheap — no GPU load at __init__ — so no patching needed."""
 
     @classmethod
     def setUpClass(cls):
-        with patch("veriform.formalization.fine_tuned.LLM") as MockLLM:
-            MockLLM.return_value = MagicMock()
-            from veriform.formalization import HeraldFormalizer
-            cls.f = HeraldFormalizer(sampling="deterministic")
+        from veriform.formalization import HeraldFormalizer
+        cls.f = HeraldFormalizer(sampling="deterministic")
 
     def test_system_prompt_matches_repo(self):
         # Verbatim from frenzymath/herald_translator worker/translator.py.

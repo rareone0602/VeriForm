@@ -22,8 +22,7 @@ class Prover(Protocol):
     def prove(self, dag: DAGModel) -> DAGModel:
         ...
 
-HEADER = """
-import Mathlib
+HEADER = """import Mathlib
 import Aesop
 
 set_option maxHeartbeats 0
@@ -31,11 +30,13 @@ set_option maxHeartbeats 0
 open BigOperators Real Nat Topology Rat
 """
 
-LEAN_TEMPLATE = HEADER + """
-
-/- {statement} -/
-{lean_code}
-""".strip()
+# Match the official DeepSeek-Prover-V2-7B model card formal_statement layout:
+#   - no leading blank line inside the lean4 code fence,
+#   - blank line between the `open` line and the docstring,
+#   - `/-- ... -/` (Lean docstring attached to the next theorem), not `/- ... -/`.
+# We assemble with explicit `\n` rather than `.strip()` because strip would
+# eat the blank-line between HEADER's trailing newline and `/--`.
+LEAN_TEMPLATE = HEADER + "\n/-- {statement}-/\n{lean_code}"
 
 LEAN_WRAPPER_TEMPLATE = """
 Complete the following Lean 4 code:
@@ -74,7 +75,6 @@ CUDA_VISIBLE_DEVICES=2 vllm serve deepseek-ai/DeepSeek-Prover-V2-7B \
     --port 8002 \
     --tensor-parallel-size 1 \
     --dtype bfloat16 \
-    --gpu-memory-utilization 0.5 \
     --max-model-len 16384
 """
 class DeepSeekProver:
@@ -83,7 +83,8 @@ class DeepSeekProver:
                  base_url: str = "http://localhost:8000/v1",
                  batch_size: int = 1,
                  negation_type: str = 'full',
-                 negator: Optional[LeanNegator] = None):
+                 negator: Optional[LeanNegator] = None,
+                 scheduler: Optional[Lean4ServerScheduler] = None):
         self.negation_type = negation_type
 
         # We keep the tokenizer LOCALLY just for formatting the prompt correctly
@@ -99,7 +100,13 @@ class DeepSeekProver:
         self.lean_pattern = re.compile(r"```lean4?(.*?)```", re.DOTALL | re.IGNORECASE)
         self.batch_size = batch_size
 
-        self.scheduler = Lean4ServerScheduler(max_concurrent_requests=64)
+        # Caller may pass a shared scheduler; otherwise we own one. Hypothesis
+        # under test: spawning a 64-worker scheduler and immediately closing
+        # it (as run_prove.py used to do) corrupts shared mp state and breaks
+        # the outer scheduler — accepting a kwarg here avoids the throwaway
+        # spawn entirely.
+        self._owns_scheduler = scheduler is None
+        self.scheduler = scheduler if scheduler is not None else Lean4ServerScheduler(max_concurrent_requests=64)
         self.theorem_extractor = TheoremExtractor()
         # Lean-side theorem negation. Caller may pass a shared LeanNegator;
         # otherwise we own one and start it lazily on first use.
@@ -116,7 +123,7 @@ class DeepSeekProver:
         }
     
     def __del__(self):
-        if hasattr(self, 'scheduler'):
+        if hasattr(self, 'scheduler') and getattr(self, '_owns_scheduler', True):
             self.scheduler.close()
         if hasattr(self, 'negator') and getattr(self, '_owns_negator', False):
             self.negator.close()

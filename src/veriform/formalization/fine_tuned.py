@@ -1,8 +1,6 @@
 
 from transformers import AutoTokenizer
 from openai import OpenAI
-from typing import Tuple
-from vllm import LLM, SamplingParams
 
 
 # Assuming BaseFormalizer is defined in .base
@@ -17,51 +15,39 @@ class HeraldFormalizer(BaseFormalizer):
 
     MODEL_DIR = "FrenzyMath/Herald_translator"
 
-    def __init__(self, sampling="deterministic"):
+    def __init__(self, sampling="deterministic", base_url="http://localhost:8002/v1"):
         self.system_prompt = "You are an expert at Lean 4 and Mathematics."
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.MODEL_DIR,
             trust_remote_code=True,
         )
-        # On H200 (141GB), 0.2 = ~28GB, which is safe for the 7B model.
-        self.model = LLM(
-            self.MODEL_DIR,
-            dtype="bfloat16",
-            tensor_parallel_size=1,
-            trust_remote_code=True,
-            gpu_memory_utilization=0.2,
+        self.client = OpenAI(
+            api_key="EMPTY",
+            base_url=base_url,
+            timeout=3600,
         )
-
-        # Herald's repo doesn't pin sampling; defaults are caller-supplied.
-        # We use temp=0 for deterministic (paper) and a mild temperature for
-        # the "recommended" mode.
-        self.recommended_sampling_params = SamplingParams(
-            temperature=0.0,
-            max_tokens=1024,
-            repetition_penalty=1.0,
+        # Herald is Llama-2-based; its max_model_len is 4096. The OpenAI
+        # server enforces input_tokens + max_tokens <= max_model_len, so
+        # max_tokens must fit under that ceiling. Empirical scan over the
+        # benchmark DAG corpus (12,784 prompts) gives max prompt = 1231
+        # tokens, so 2048 leaves >800 tokens of headroom on every prompt.
+        # At temp=0 with greedy decoding this preserves the previous
+        # in-process output distribution byte-for-byte: in-process vLLM
+        # was silently truncating max_tokens=16384 to (4096 - prompt_len)
+        # anyway, and Herald Lean outputs are well under 2048 tokens.
+        self.recommended_kwargs = {
+            "temperature": 0.0,
+            "max_tokens": 1024,
+            "extra_body": {"repetition_penalty": 1.0},
+        }
+        self.deterministic_kwargs = {
+            "temperature": 0.0,
+            "max_tokens": 2048,
+        }
+        self.gen_kwargs = (
+            self.recommended_kwargs if sampling == "recommended"
+            else self.deterministic_kwargs
         )
-        self.deterministic_sampling_params = SamplingParams(
-            temperature=0,
-            max_tokens=16384,
-        )
-        self.sampling_params = (
-            self.recommended_sampling_params if sampling == "recommended"
-            else self.deterministic_sampling_params
-        )
-
-    def _formalize_prompt(self, informal_problems: list[str]) -> Tuple[list[str], list[str]]:
-        response = self.model.generate(informal_problems, sampling_params=self.sampling_params)
-        lean_codes = []
-        raw_outputs = []
-        for i in range(len(informal_problems)):
-            try:
-                generated_text = response[i].outputs[0].text
-                raw_outputs.append(generated_text)
-                lean_code = self.parse_lean_code(generated_text)
-            except Exception:
-                lean_code = None
-            lean_codes.append(lean_code)
-        return lean_codes, raw_outputs
 
     def initialize_dialog(self):
         self.dialog = [{"role": "system", "content": self.system_prompt}]

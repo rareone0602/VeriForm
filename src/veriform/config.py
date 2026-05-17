@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class DatasetSection(BaseModel):
     """How to load CoT chains. Currently the active path is ProcessBench."""
     type: Literal["processbench"] = "processbench"
-    file_path: str = "./data/processed/dags.json"
+    file_path: str = "./data/parsed/unperturbed/dags.json"
     num_samples: Optional[int] = 1179
     seed: int = 42
 
